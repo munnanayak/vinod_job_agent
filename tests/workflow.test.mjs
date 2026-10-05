@@ -12,6 +12,7 @@ import {
 import {
   assessMatch,
   exportEligibleJobs,
+  exportSheetRows,
   locationFits,
 } from "../apps/api/dist/workflow.js";
 
@@ -50,6 +51,19 @@ test("jobs deleted from the sheet are eligible for re-export even if they were e
     exportEligibleJobs(jobs, inSheet).map((job) => job.id),
     ["a", "c"],
   );
+});
+
+test("sheet export ignores populated rows without IDs but reports them", () => {
+  const orphan = HEADERS.map((_, index) =>
+    index === 2 ? "Leftover company" : "",
+  );
+  const valid = HEADERS.map((_, index) => (index === 0 ? "job-1" : ""));
+
+  const result = exportSheetRows([HEADERS, orphan, valid]);
+
+  assert.deepEqual([...result.ids], ["job-1"]);
+  assert.equal(result.rowsWithoutId, 1);
+  assert.throws(() => exportSheetRows([["Wrong header"]]), /headers changed/);
 });
 
 test("application email needs an explicit instruction and skips accommodation addresses", () => {

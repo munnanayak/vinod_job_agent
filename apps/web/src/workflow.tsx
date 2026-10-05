@@ -90,7 +90,7 @@ type RunSummary = {
     skipped: number;
     capReached: boolean;
   };
-  sheet: { exported?: number; error?: string } | null;
+  sheet: { exported?: number; error?: string; rowsWithoutId?: number } | null;
   replies: { newReplies: number } | null;
 };
 type Batch = {
@@ -250,7 +250,11 @@ export function Workflow() {
       return (
         `Found ${added} new job${added === 1 ? "" : "s"}` +
         (r.sheet?.exported !== undefined
-          ? ` and added ${r.sheet.exported} to your sheet. Next: approve the ones you want in the sheet (step 2).`
+          ? ` and added ${r.sheet.exported} to your sheet.` +
+            (r.sheet.rowsWithoutId
+              ? ` ${r.sheet.rowsWithoutId} non-empty sheet row(s) still need a Job ID before previewing.`
+              : "") +
+            " Next: approve the ones you want in the sheet (step 2)."
           : r.sheet?.error
             ? `, but the sheet could not be updated: ${r.sheet.error}`
             : ". Connect Google to send them to your review sheet.")
@@ -258,8 +262,17 @@ export function Workflow() {
     });
   const exportSheet = () =>
     run("export", async () => {
-      const r = await api<{ exported: number }>("workflow/export", {});
-      return `${r.exported} rows added to your sheet. Review them there, then preview.`;
+      const r = await api<{ exported: number; rowsWithoutId: number }>(
+        "workflow/export",
+        {},
+      );
+      return (
+        `${r.exported} rows added to your sheet.` +
+        (r.rowsWithoutId
+          ? ` ${r.rowsWithoutId} non-empty sheet row(s) still need a Job ID before previewing.`
+          : "") +
+        " Review them there, then preview."
+      );
     });
   const makePreview = () =>
     run("preview", async () => {

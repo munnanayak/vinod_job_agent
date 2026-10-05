@@ -404,6 +404,24 @@ export function exportEligibleJobs<
   return jobs.filter((job) => !inSheet.has(job.id));
 }
 
+export function exportSheetRows(values: string[][]) {
+  if (
+    !values.length ||
+    HEADERS.some((header, index) => values[0][index] !== header)
+  )
+    throw new BadRequestException(
+      "Sheet headers changed. Restore the original header order before exporting.",
+    );
+  const rows = values.slice(1);
+  const ids = new Set(
+    rows.map((row) => row[0]?.trim()).filter((id): id is string => !!id),
+  );
+  const rowsWithoutId = rows.filter(
+    (row) => row.some((cell) => cell.trim()) && !row[0]?.trim(),
+  ).length;
+  return { ids, rowsWithoutId };
+}
+
 export function rowFor(job: Job, status = "Not submitted"): string[] {
   return [
     job.id,
@@ -1190,16 +1208,13 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
 
   private async exportRun() {
     const values = await this.google.readSheet();
-    if (!values.length || values[0].every((c) => !c.trim()))
+    const needsHeader =
+      !values.length || values[0].every((cell) => !cell.trim());
+    if (needsHeader)
       await this.google.writeRange("A1:T1", [HEADERS]);
-    else {
-      try {
-        parseReviewRows(values);
-      } catch (error) {
-        throw new BadRequestException((error as Error).message);
-      }
-    }
-    const inSheet = new Set(values.slice(1).map((r) => r[0]));
+    const { ids: inSheet, rowsWithoutId } = exportSheetRows(
+      needsHeader ? [HEADERS] : values,
+    );
     // Jobs applied to before the Review column showed it are brought up to date.
     const done = await this.db.client.jobApplication.findMany({
       where: { status: { in: ["SENT", "REPLIED", "APPLIED_MANUALLY"] } },
@@ -1239,7 +1254,7 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
       where: { id: { in: fresh.map((j) => j.id) } },
       data: { sheetExportedAt: new Date() },
     });
-    return { exported: fresh.length };
+    return { exported: fresh.length, rowsWithoutId };
   }
 
   private async buildPreview(): Promise<Preview> {
