@@ -10,6 +10,7 @@ import {
   selectPostings,
 } from "./discovery-selection.js";
 import {
+  BadGatewayException,
   BadRequestException,
   ConflictException,
   Injectable,
@@ -1249,6 +1250,19 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
             ),
           ),
       );
+    }
+    if (fresh.length) {
+      const written = new Set(
+        (await this.google.readSheet())
+          .slice(1)
+          .map((row) => row[0]?.trim())
+          .filter((id): id is string => !!id),
+      );
+      const missing = fresh.filter((job) => !written.has(job.id));
+      if (missing.length)
+        throw new BadGatewayException(
+          `Google Sheets accepted the export request, but ${missing.length} of ${fresh.length} job rows are not visible in the configured Jobs tab. No jobs were marked exported; retrying is safe.`,
+        );
     }
     await this.db.client.jobOpening.updateMany({
       where: { id: { in: fresh.map((j) => j.id) } },
