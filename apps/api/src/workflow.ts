@@ -398,10 +398,9 @@ export const statusLabel = (status: string) =>
     APPLIED_MANUALLY: "Applied manually",
   })[status] ?? status;
 
-export function exportEligibleJobs<T extends { id: string; sheetExportedAt?: Date | null }>(
-  jobs: T[],
-  inSheet: Set<string>,
-) {
+export function exportEligibleJobs<
+  T extends { id: string; sheetExportedAt?: Date | null },
+>(jobs: T[], inSheet: Set<string>) {
   return jobs.filter((job) => !inSheet.has(job.id));
 }
 
@@ -499,7 +498,17 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
   }
 
   export() {
-    return this.exclusive(() => this.exportRun());
+    return this.exclusive(async () => {
+      try {
+        return await this.exportRun();
+      } catch (error) {
+        console.error(
+          "Google Sheets export failed:",
+          error instanceof Error ? (error.stack ?? error.message) : error,
+        );
+        throw error;
+      }
+    });
   }
 
   private async ensureBoards() {
@@ -1183,7 +1192,13 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
     const values = await this.google.readSheet();
     if (!values.length || values[0].every((c) => !c.trim()))
       await this.google.writeRange("A1:T1", [HEADERS]);
-    else parseReviewRows(values); // Validates headers and IDs before appending.
+    else {
+      try {
+        parseReviewRows(values);
+      } catch (error) {
+        throw new BadRequestException((error as Error).message);
+      }
+    }
     const inSheet = new Set(values.slice(1).map((r) => r[0]));
     // Jobs applied to before the Review column showed it are brought up to date.
     const done = await this.db.client.jobApplication.findMany({
@@ -1205,20 +1220,21 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
       ],
     });
     const fresh = exportEligibleJobs(
-      jobs.filter(
-      (j) => !inSheet.has(j.id) && experienceFits(j.description),
-      ),
+      jobs.filter((j) => !inSheet.has(j.id) && experienceFits(j.description)),
       inSheet,
     );
-    if (fresh.length)
+    for (let start = 0; start < fresh.length; start += 100) {
       await this.google.appendRows(
-        fresh.map((j) =>
-          rowFor(
-            j,
-            j.application ? statusLabel(j.application.status) : undefined,
+        fresh
+          .slice(start, start + 100)
+          .map((j) =>
+            rowFor(
+              j,
+              j.application ? statusLabel(j.application.status) : undefined,
+            ),
           ),
-        ),
       );
+    }
     await this.db.client.jobOpening.updateMany({
       where: { id: { in: fresh.map((j) => j.id) } },
       data: { sheetExportedAt: new Date() },
@@ -1893,7 +1909,10 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
   async overview() {
     const values = await this.google.readSheet().catch(() => [] as string[][]);
     const inSheet = new Set(
-      values.slice(1).map((row) => row[0]).filter((id): id is string => !!id),
+      values
+        .slice(1)
+        .map((row) => row[0])
+        .filter((id): id is string => !!id),
     );
     const allJobs = await this.db.client.jobOpening.findMany({
       select: { id: true, description: true },
