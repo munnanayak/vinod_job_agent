@@ -98,6 +98,35 @@ class ProfileController {
 class AppModule {}
 const app = await NestFactory.create(AppModule);
 const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3000);
+const allowOrigin = (origin: string) => {
+  if (!origin) return true;
+  const origins = new Set([
+    process.env.APP_URL,
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    ...(process.env.CORS_ALLOWED_ORIGINS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    ...(process.env.RENDER_EXTERNAL_HOSTNAME
+      ? [`https://${process.env.RENDER_EXTERNAL_HOSTNAME}`]
+      : []),
+    ...(process.env.API_PUBLIC_URL ? [new URL(process.env.API_PUBLIC_URL).origin] : []),
+    ...(process.env.FRONTEND_URL ? [new URL(process.env.FRONTEND_URL).origin] : []),
+  ].filter(Boolean) as string[]);
+  if (origins.has(origin)) return true;
+  try {
+    const host = new URL(origin).hostname;
+    return (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host.endsWith(".onrender.com") ||
+      host.endsWith(".render.com")
+    );
+  } catch {
+    return false;
+  }
+};
 const allowedOrigins = new Set(
   [
     process.env.APP_URL,
@@ -125,7 +154,7 @@ app.enableCors(
       /^\/api\/workflow\/forms\/(claim|closed|submitted|skip|answers|options)$/.test(
         req.url,
       ) && /^chrome-extension:\/\/[a-p]{32}$/.test(origin);
-    const allow = extensionClaim || allowedOrigins.has(origin);
+    const allow = extensionClaim || allowOrigin(origin);
     callback(null, {
       origin: allow ? origin || true : false,
       methods: ["GET", "PUT", "POST", "OPTIONS"],
@@ -151,7 +180,7 @@ app.use(
     res: { status: (n: number) => { json: (v: unknown) => void } },
     next: () => void,
   ) => {
-    const origins = new Set(allowedOrigins);
+    const origin = req.headers.origin ?? "";
     const hosts = new Set([
       `localhost:${port}`,
       `127.0.0.1:${port}`,
@@ -178,7 +207,7 @@ app.use(
       !extensionClaim &&
       !["GET", "HEAD", "OPTIONS"].includes(req.method) &&
       (req.headers["x-job-agent"] !== "1" ||
-        (req.headers.origin && !origins.has(req.headers.origin)))
+        (origin && !allowOrigin(origin)))
     ) {
       return res
         .status(403)

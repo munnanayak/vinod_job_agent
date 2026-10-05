@@ -9,7 +9,11 @@ import {
   targetRole,
   unchanged,
 } from "../apps/api/dist/workflow-rules.js";
-import { assessMatch, locationFits } from "../apps/api/dist/workflow.js";
+import {
+  assessMatch,
+  exportEligibleJobs,
+  locationFits,
+} from "../apps/api/dist/workflow.js";
 
 const profile = {
   skills: ["TypeScript", "React", "Node.js", "PostgreSQL", "LangChain"],
@@ -32,6 +36,20 @@ test("only full-stack and AI engineering titles are targeted", () => {
     "Full Stack Designer",
   ])
     assert.equal(targetRole(t), false, t);
+});
+
+test("jobs deleted from the sheet are eligible for re-export even if they were exported before", () => {
+  const jobs = [
+    { id: "a", sheetExportedAt: new Date("2026-05-01T00:00:00Z") },
+    { id: "b", sheetExportedAt: null },
+    { id: "c", sheetExportedAt: new Date("2026-05-02T00:00:00Z") },
+  ];
+  const inSheet = new Set(["b"]);
+
+  assert.deepEqual(
+    exportEligibleJobs(jobs, inSheet).map((job) => job.id),
+    ["a", "c"],
+  );
 });
 
 test("application email needs an explicit instruction and skips accommodation addresses", () => {

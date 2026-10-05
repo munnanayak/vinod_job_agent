@@ -398,6 +398,13 @@ export const statusLabel = (status: string) =>
     APPLIED_MANUALLY: "Applied manually",
   })[status] ?? status;
 
+export function exportEligibleJobs<T extends { id: string; sheetExportedAt?: Date | null }>(
+  jobs: T[],
+  inSheet: Set<string>,
+) {
+  return jobs.filter((job) => !inSheet.has(job.id));
+}
+
 export function rowFor(job: Job, status = "Not submitted"): string[] {
   return [
     job.id,
@@ -1190,7 +1197,6 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
           .writeRange(`B${i + 1}`, [["APPLIED"]])
           .catch(() => undefined);
     const jobs = await this.db.client.jobOpening.findMany({
-      where: { sheetExportedAt: null },
       include: { application: true },
       orderBy: [
         { startup: "desc" },
@@ -1198,8 +1204,11 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
         { discoveredAt: "asc" },
       ],
     });
-    const fresh = jobs.filter(
+    const fresh = exportEligibleJobs(
+      jobs.filter(
       (j) => !inSheet.has(j.id) && experienceFits(j.description),
+      ),
+      inSheet,
     );
     if (fresh.length)
       await this.google.appendRows(
@@ -1211,7 +1220,7 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
         ),
       );
     await this.db.client.jobOpening.updateMany({
-      where: { id: { in: jobs.map((j) => j.id) } },
+      where: { id: { in: fresh.map((j) => j.id) } },
       data: { sheetExportedAt: new Date() },
     });
     return { exported: fresh.length };
@@ -1882,11 +1891,22 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
   }
 
   async overview() {
+    const values = await this.google.readSheet().catch(() => [] as string[][]);
+    const inSheet = new Set(
+      values.slice(1).map((row) => row[0]).filter((id): id is string => !!id),
+    );
+    const allJobs = await this.db.client.jobOpening.findMany({
+      select: { id: true, description: true },
+      orderBy: [{ startup: "desc" }, { discoveredAt: "asc" }],
+    });
+    const pendingExport = exportEligibleJobs(
+      allJobs.filter((job) => experienceFits(job.description)),
+      inSheet,
+    ).length;
     const [
       jobs,
       applications,
       notifications,
-      pendingExport,
       runs,
       boards,
       sentToday,
@@ -1925,7 +1945,6 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
         orderBy: { createdAt: "desc" },
         take: 50,
       }),
-      this.db.client.jobOpening.count({ where: { sheetExportedAt: null } }),
       this.db.client.agentRun.findMany({
         orderBy: { startedAt: "desc" },
         take: 5,
