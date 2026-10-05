@@ -1,3 +1,4 @@
+import { apiUrl } from "./api-url";
 import React, { useEffect, useState } from "react";
 
 type Row = { question: string; answer: string; hint?: string; saved: boolean };
@@ -7,7 +8,7 @@ type Loaded = {
 };
 
 async function call(method: "GET" | "PUT", body?: unknown): Promise<Loaded> {
-  const response = await fetch("/api/workflow/answers", {
+  const response = await fetch(apiUrl("workflow/answers"), {
     method,
     headers: { "Content-Type": "application/json", "X-Job-Agent": "1" },
     ...(body ? { body: JSON.stringify(body) } : {}),

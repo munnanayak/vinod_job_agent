@@ -1,3 +1,4 @@
+import { apiUrl } from "./api-url";
 import React, { useEffect, useState } from "react";
 
 type Status = {
@@ -126,7 +127,7 @@ type Preview = {
 };
 
 async function api<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`/api/${path}`, {
+  const response = await fetch(apiUrl(path), {
     method: body === undefined ? "GET" : "POST",
     headers: { "Content-Type": "application/json", "X-Job-Agent": "1" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -423,7 +424,7 @@ export function Workflow() {
             </p>
             <a
               className="button primary"
-              href="/api/integrations/google/connect"
+              href={apiUrl("integrations/google/connect")}
             >
               Connect Google
             </a>
@@ -733,7 +734,7 @@ export function Workflow() {
             >
               Open &amp; fill application ↗
             </a>
-            <a href="/api/resume/file">Download CV</a>
+            <a href={apiUrl("resume/file")}>Download CV</a>
             <button onClick={() => setPrepared(null)}>Close</button>
           </div>
           <small className="hint">
@@ -803,7 +804,7 @@ export function Workflow() {
                 <a href={a.job.url} target="_blank" rel="noreferrer">
                   Open application ↗
                 </a>
-                <a href="/api/resume/file">Download CV</a>
+                <a href={apiUrl("resume/file")}>Download CV</a>
                 <button
                   disabled={Boolean(busy)}
                   onClick={() => prepareForm(a.job.id)}

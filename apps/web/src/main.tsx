@@ -1,3 +1,4 @@
+import { apiUrl } from "./api-url";
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { candidateProfileSchema } from "@job-agent/types";
@@ -36,7 +37,7 @@ async function request(
   method = "GET",
   body?: CandidateProfileInput,
 ): Promise<CandidateProfile | null> {
-  const response = await fetch("/api/profile", {
+  const response = await fetch(apiUrl("profile"), {
     method,
     headers: { "Content-Type": "application/json", "X-Job-Agent": "1" },
     ...(body ? { body: JSON.stringify(body) } : {}),
@@ -69,7 +70,7 @@ function App() {
     setError("");
     try {
       const profile = await request();
-      const resumeResponse = await fetch("/api/resume");
+      const resumeResponse = await fetch(apiUrl("resume"));
       if (!resumeResponse.ok)
         throw new Error("Could not load resume information.");
       setResume((await resumeResponse.json()).resume);
@@ -414,7 +415,9 @@ function App() {
                           {resume.fileName} ·{" "}
                           {Math.ceil(resume.sizeBytes / 1024)} KB
                         </p>
-                        <a href="/api/resume/file">Download original PDF</a>
+                        <a href={apiUrl("resume/file")}>
+                          Download original PDF
+                        </a>
                         <p>
                           This is your original CV. Profile edits do not change
                           its contents. Approved email applications attach this
