@@ -363,11 +363,12 @@ test("discovery queues only supported applications and resolves employer apply l
     }),
     posting({ url: "https://naukri.com/job/123", source: "naukri", links: [] }),
   ]);
-  assert.equal(f.queue.size, 1);
+  assert.equal(f.queue.size, 2);
   assert.equal(
     [...f.queue.values()][0].posting.url,
     "https://join.com/companies/acme/12345-backend-developer",
   );
+  assert.equal([...f.queue.values()][1].posting.source, "linkedin");
 });
 
 test("shared lock rejects a second process without running discovery", async () => {

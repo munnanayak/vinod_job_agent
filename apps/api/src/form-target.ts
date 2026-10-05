@@ -8,6 +8,18 @@ export function formTarget(
       return null;
     const parts = u.pathname.split("/").filter(Boolean);
     if (
+      ["linkedin.com", "www.linkedin.com"].includes(u.hostname) &&
+      parts.length === 3 &&
+      parts[0] === "jobs" &&
+      parts[1] === "view" &&
+      /^\d+$/.test(parts[2])
+    )
+      return {
+        provider: "LinkedIn external apply",
+        identity: `linkedin:jobs:${parts[2]}`,
+        url: `https://www.linkedin.com/jobs/view/${parts[2]}/`,
+      };
+    if (
       u.hostname === "join.com" &&
       parts.length === 3 &&
       parts[0] === "companies" &&
@@ -85,4 +97,27 @@ export function autofillTarget(job: {
       ? `https://job-boards.greenhouse.io/${job.board}/jobs/${job.externalId}`
       : job.url,
   );
+}
+
+export function matchesApplicationPage(identity: string, value: string) {
+  if (formTarget(value)?.identity === identity) return true;
+  try {
+    const [provider, company, job] = identity.split(":"),
+      u = new URL(value),
+      p = u.pathname.split("/").filter(Boolean);
+    return (
+      provider === "join" &&
+      u.origin === "https://join.com" &&
+      !u.username &&
+      !u.password &&
+      p[0] === "companies" &&
+      p[1]?.toLowerCase() === company &&
+      p[2] === "apply" &&
+      p.length <= 4 &&
+      (job === "spontaneous-application" ||
+        u.searchParams.get("jobId") === job.split("-")[0])
+    );
+  } catch {
+    return false;
+  }
 }

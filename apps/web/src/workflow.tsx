@@ -460,8 +460,9 @@ export function Workflow() {
             </div>
             <p>
               Searches {overview?.boards ?? "the"} Greenhouse, Lever and Ashby
-              company job boards. Only jobs with supported application forms are
-              saved and exported. Roles come from your profile.{" "}
+              company job boards and employer apply links on Hacker News. Jobs
+              with supported forms or LinkedIn external Apply links are saved
+              and exported. Roles come from your profile.{" "}
               {overview?.settings.locationScope === "worldwide"
                 ? "Worldwide discovery includes relocation opportunities; review location and work authorization before applying."
                 : "Discovery follows your profile location preferences."}{" "}
@@ -565,14 +566,15 @@ export function Workflow() {
                 <span className="pill go">Most jobs</span>
                 <h3>Apply on company forms</h3>
                 <p>
-                  For Greenhouse, Lever, Ashby and JOIN jobs. The first approved
-                  job opens in a new tab and the Form Assistant extension fills
-                  it. After each application is submitted, the next job opens in
-                  that same tab by itself and is recorded here. The agent stops
-                  after 10 applications; click Apply next 10 again for the next
-                  batch. Applying starts only when you click this button. Jobs
-                  follow their approved order in the sheet. Unavailable or
-                  unsupported forms are skipped and the next job is checked.
+                  For Greenhouse, Lever, Ashby, JOIN and LinkedIn external Apply
+                  jobs. The first approved job opens in a new tab and the Form
+                  Assistant extension fills it. After each application is
+                  submitted, the next job opens in that same tab by itself and
+                  is recorded here. The agent stops after 10 applications; click
+                  Apply next 10 again for the next batch. Applying starts only
+                  when you click this button. Jobs follow their approved order
+                  in the sheet. Unavailable or unsupported forms are skipped and
+                  the next job is checked.
                 </p>
                 <label className="checkbox">
                   <input

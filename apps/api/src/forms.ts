@@ -1,4 +1,9 @@
-import { autofillTarget, formTarget } from "./form-target.js";
+import {
+  autofillTarget,
+  formTarget,
+  matchesApplicationPage,
+} from "./form-target.js";
+import { planNavigation, type NavigationObservation } from "./navigation.js";
 export { formTarget } from "./form-target.js";
 import {
   BadRequestException,
@@ -19,6 +24,9 @@ export async function formJobOpen(
   request: typeof fetch = fetch,
 ): Promise<boolean> {
   const [provider, board, id] = identity.split(":");
+  // LinkedIn availability and external Apply links are inspected in the user's
+  // authenticated browser. Server-side scraping cannot validate that session.
+  if (provider === "linkedin") return true;
   if (provider === "join") {
     const response = await request(
       `https://join.com/companies/${encodeURIComponent(board)}/${encodeURIComponent(id)}`,
@@ -115,6 +123,11 @@ export class FormSessions {
     return { code, expiresAt: new Date(now + 10 * 60_000).toISOString() };
   }
   consume(code: string, pageUrl: string, now = Date.now()) {
+    const entry = this.peek(code, pageUrl, now);
+    this.entries.delete(code); // Claim synchronously, before any await.
+    return entry;
+  }
+  peek(code: string, pageUrl: string, now = Date.now()) {
     const entry = this.entries.get(code);
     if (!entry || entry.expires <= now) {
       this.entries.delete(code);
@@ -126,7 +139,6 @@ export class FormSessions {
       throw new BadRequestException(
         "Wrong application page. Open the exact job linked from the dashboard.",
       );
-    this.entries.delete(code); // Claim synchronously, before any await.
     return entry;
   }
   consumeClosed(code: string, pageUrl: string, now = Date.now()) {
@@ -135,7 +147,10 @@ export class FormSessions {
       throw new BadRequestException("Preparation expired or was already used.");
     const u = new URL(pageUrl);
     const [provider, board, id] = entry.identity.split(":");
-    if (provider === "join" && formTarget(pageUrl)?.identity === entry.identity)
+    if (
+      ["join", "linkedin"].includes(provider) &&
+      formTarget(pageUrl)?.identity === entry.identity
+    )
       return this.consume(code, pageUrl, now);
     if (
       provider !== "greenhouse" ||
@@ -189,7 +204,13 @@ export class FormAssistant {
   // After a form is filled, lets the extension report "I submitted it" for that one job.
   private reports = new Map<
     string,
-    { jobId: string; company: string; expires: number }
+    {
+      jobId: string;
+      company: string;
+      identity: string;
+      expires: number;
+      planRequests?: number;
+    }
   >();
   constructor(
     private readonly workflow: JobWorkflow,
@@ -234,6 +255,40 @@ export class FormAssistant {
       },
       instructions:
         "Open the application. The Form Assistant fills it automatically; review every field, answer what is left, solve any CAPTCHA and submit yourself.",
+    };
+  }
+
+  async resolve(code: string, pageUrl: string, applicationUrl: string) {
+    if (formTarget(pageUrl)?.provider !== "LinkedIn external apply")
+      throw new BadRequestException(
+        "Only the approved LinkedIn job can resolve an external Apply link.",
+      );
+    const target = formTarget(applicationUrl);
+    if (!target || target.provider === "LinkedIn external apply")
+      throw new PreconditionFailedException(
+        "This Apply link is not a supported Greenhouse, Lever, Ashby or JOIN form. Continue manually or skip this job.",
+      );
+    const session = this.sessions.peek(code, pageUrl);
+    const data = await this.workflow.reviewedFormJob(session.jobId);
+    if (this.fingerprint(data) !== session.fingerprint)
+      throw new ConflictException(
+        "Profile, CV or application changed. Prepare the form again.",
+      );
+    const open = await formJobOpen(target.identity);
+    this.sessions.consume(code, pageUrl);
+    if (!open) {
+      this.passed.add(session.jobId);
+      return { openUrl: null, next: await this.next(), closed: true };
+    }
+    const issued = this.sessions.issue(
+      session.jobId,
+      session.fingerprint,
+      target.identity,
+    );
+    return {
+      openUrl: `${target.url}#job-agent=${issued.code}`,
+      next: null,
+      closed: false,
     };
   }
   // Each dashboard click permits at most ten submissions, one form at a time.
@@ -302,6 +357,7 @@ export class FormAssistant {
     this.reports.set(reportToken, {
       jobId: session.jobId,
       company: data.job.company,
+      identity: session.identity,
       expires: now + 3 * 3_600_000,
     });
     // Answers that came from your own standing answers, matched by meaning.
@@ -400,6 +456,32 @@ export class FormAssistant {
         await this.bank(),
       ),
     };
+  }
+  async plan(reportToken: string, observation: NavigationObservation) {
+    const report = this.reports.get(reportToken);
+    if (!report || report.expires <= Date.now())
+      throw new BadRequestException("This form session expired.");
+    if (!matchesApplicationPage(report.identity, observation.pageUrl))
+      throw new BadRequestException("Wrong application page.");
+    if ((report.planRequests ?? 0) >= 30)
+      return {
+        action: "manual",
+        reason:
+          "Navigation limit reached for this application. Continue manually.",
+      };
+    report.planRequests = (report.planRequests ?? 0) + 1;
+    await this.workflow.reviewedFormJob(report.jobId);
+    const buttons = observation.buttons.filter(
+      (button) =>
+        !button.href || matchesApplicationPage(report.identity, button.href),
+    );
+    return planNavigation({
+      ...observation,
+      buttons,
+      login:
+        observation.login ||
+        /\/authentication\b/.test(new URL(observation.pageUrl).pathname),
+    });
   }
   // Whether an application to this company is already recorded here.
   private async appliedTo(company: string) {

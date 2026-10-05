@@ -1,10 +1,20 @@
 {
   "manifest_version": 3,
   "name": "Job Agent \u2014 Form Assistant",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "description": "Fills approved job applications opened from your Job Agent dashboard. You review and submit.",
   "permissions": ["activeTab", "scripting", "storage"],
-  "host_permissions": ["https://vinod-job-agent.onrender.com/*"],
+  "host_permissions": [
+    "https://vinod-job-agent.onrender.com/*",
+    "https://www.linkedin.com/*",
+    "https://linkedin.com/*",
+    "https://join.com/*",
+    "https://job-boards.greenhouse.io/*",
+    "https://boards.greenhouse.io/*",
+    "https://jobs.lever.co/*",
+    "https://jobs.eu.lever.co/*",
+    "https://jobs.ashbyhq.com/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -23,6 +33,14 @@
     {
       "matches": ["https://join.com/companies/*"],
       "js": ["fill.js", "join-flow.js", "join-content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.linkedin.com/jobs/*",
+        "https://linkedin.com/jobs/*"
+      ],
+      "js": ["linkedin-content.js"],
       "run_at": "document_idle"
     }
   ],

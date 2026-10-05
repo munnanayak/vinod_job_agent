@@ -80,6 +80,8 @@
       lastNavigation = 0,
       autoSubmitAt = 0,
       cancelled = false;
+    let plannedStep = "";
+    const navigationCounts = new Map();
     const inspect = async () => {
       if (busy || stopped) return;
       if (!joinPageMatches(packet.identity, location.href)) {
@@ -153,7 +155,7 @@
       const buttons = [
         ...document.querySelectorAll('button,a,input[type="submit"]'),
       ].filter((el) => !el.disabled && el.getClientRects().length);
-      const next = buttons.find((el) =>
+      let next = buttons.find((el) =>
         ["apply", "next"].includes(
           joinButtonKind(el.textContent || el.value || ""),
         ),
@@ -166,6 +168,55 @@
           'iframe[src*="recaptcha"],iframe[src*="hcaptcha"],.g-recaptcha,[data-sitekey]',
         ),
       );
+      const step =
+        signature +
+        buttons.map((el) => el.textContent || el.value || "").join("|");
+      if (!next && !missing.length && !captcha && step !== plannedStep) {
+        plannedStep = step;
+        const candidates = buttons
+          .slice(0, 40)
+          .map((el, id) => ({
+            id,
+            label: (el.textContent || el.value || "").trim().slice(0, 200),
+            href: el.getAttribute("href")
+              ? new URL(el.getAttribute("href"), location.href).href
+              : "",
+            withinForm: Boolean(el.closest('form,[role="dialog"]')),
+          }));
+        busy = true;
+        try {
+          const response = await ask({
+            type: "plan",
+            token: packet.reportToken,
+            observation: {
+              pageUrl: location.href,
+              heading: (
+                document.querySelector("h1,h2")?.textContent || ""
+              ).slice(0, 1000),
+              login: false,
+              captcha,
+              missing: [],
+              buttons: candidates,
+            },
+          });
+          if (response?.ok && response.data?.action === "click") {
+            const candidate = candidates.find(
+                (b) => b.id === response.data.buttonId,
+              ),
+              el = buttons[response.data.buttonId];
+            if (
+              candidate &&
+              el?.isConnected &&
+              (el.textContent || el.value || "").trim().slice(0, 200) ===
+                candidate.label
+            )
+              next = el;
+          }
+        } catch {
+        } finally {
+          busy = false;
+        }
+      }
       show(
         missing.length
           ? `Needs your answers: ${missing.join(", ")}. Fill these to continue.`
@@ -185,13 +236,20 @@
       if (submit)
         button("I submitted it", () => finish("submitted", packet.reportToken));
       // Move through non-final form steps only. Never select another vacancy.
-      if (next && !missing.length && Date.now() - lastNavigation > 5000) {
+      if (
+        next &&
+        !missing.length &&
+        !captcha &&
+        Date.now() - lastNavigation > 5000 &&
+        (navigationCounts.get(step) || 0) < 3
+      ) {
         const href = next.getAttribute("href");
         if (
           !href ||
           joinPageMatches(packet.identity, new URL(href, location.href).href)
         ) {
           lastNavigation = Date.now();
+          navigationCounts.set(step, (navigationCounts.get(step) || 0) + 1);
           next.click();
         }
       }

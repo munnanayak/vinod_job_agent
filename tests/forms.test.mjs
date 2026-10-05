@@ -159,7 +159,7 @@ test("form URLs bind to an exact supported job and reject lookalikes", () => {
   for (const u of [
     "http://jobs.lever.co/acme/12345678",
     "https://jobs.lever.co.evil.test/acme/12345678",
-    "https://linkedin.com/jobs/view/1",
+    "https://linkedin.com.evil.test/jobs/view/1",
     "https://jobs.lever.co/acme/12345678/settings",
     "https://user@jobs.lever.co/acme/12345678",
     "https://jobs.lever.co:444/acme/12345678",
@@ -494,6 +494,72 @@ test("approved aggregator jobs with supported URLs enter the form queue", async 
   assert.equal(
     (await new FormAssistant(f.workflow).prepare("job0")).provider,
     "Lever",
+  );
+});
+
+test("LinkedIn external Apply resolves a supported form while preserving original approval", async () => {
+  const f = fakeWorkflow();
+  f.jobs[0].source = "linkedin";
+  f.jobs[0].url = "https://www.linkedin.com/jobs/view/12345/";
+  f.rows[1][6] = f.jobs[0].url;
+  f.rows[1][19] = "linkedin:acme";
+  const service = new FormAssistant(f.workflow);
+  const prepared = await service.prepare("job0");
+  assert.equal(prepared.provider, "LinkedIn external apply");
+  await assert.rejects(
+    () =>
+      service.resolve(
+        prepared.code,
+        f.jobs[0].url,
+        "https://evil.test/application",
+      ),
+    /not a supported/,
+  );
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response("{}", { status: 429 });
+  try {
+    await assert.rejects(
+      () => service.resolve(prepared.code, f.jobs[0].url, url),
+      /retry later/,
+    );
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({ id: "12345678-aaaa-bbbb-cccc-123456789012" }),
+      );
+    const resolved = await service.resolve(prepared.code, f.jobs[0].url, url);
+    const code = resolved.openUrl.split("#job-agent=")[1];
+    assert.equal(
+      (await service.claim(code, url)).identity,
+      formTarget(url).identity,
+    );
+    assert.equal(f.jobs[0].url, "https://www.linkedin.com/jobs/view/12345/");
+    assert.equal(f.sent.length, 0);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("LinkedIn Apply cannot resolve a different job or revoked approval", async () => {
+  const f = fakeWorkflow();
+  f.jobs[0].source = "linkedin";
+  f.jobs[0].url = "https://www.linkedin.com/jobs/view/12345/";
+  f.rows[1][6] = f.jobs[0].url;
+  f.rows[1][19] = "linkedin:acme";
+  const service = new FormAssistant(f.workflow);
+  const prepared = await service.prepare("job0");
+  await assert.rejects(
+    () =>
+      service.resolve(
+        prepared.code,
+        "https://www.linkedin.com/jobs/view/999/",
+        url,
+      ),
+    /Wrong application/,
+  );
+  f.rows[1][1] = "REJECTED";
+  await assert.rejects(
+    () => service.resolve(prepared.code, f.jobs[0].url, url),
+    /Approve this job/,
   );
 });
 

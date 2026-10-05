@@ -14,6 +14,7 @@ import {
 import { GoogleIntegration } from "./google.js";
 import { FormAssistant } from "./forms.js";
 import { JobWorkflow } from "./workflow.js";
+import type { NavigationObservation } from "./navigation.js";
 
 const app = () => process.env.APP_URL ?? "http://localhost:5173";
 
@@ -145,6 +146,24 @@ export class WorkflowController {
     return this.forms.claim(token, body.pageUrl, questions);
   }
 
+  @Post("workflow/forms/resolve")
+  resolveForm(
+    @Headers("x-job-agent-form-token") token: string,
+    @Body() body: { pageUrl?: unknown; applicationUrl?: unknown },
+  ) {
+    if (
+      !/^[a-f0-9]{64}$/.test(token ?? "") ||
+      typeof body?.pageUrl !== "string" ||
+      body.pageUrl.length > 2000 ||
+      typeof body?.applicationUrl !== "string" ||
+      body.applicationUrl.length > 2000
+    )
+      throw new BadRequestException(
+        "Invalid application link or preparation code.",
+      );
+    return this.forms.resolve(token, body.pageUrl, body.applicationUrl);
+  }
+
   @Post("workflow/forms/submitted")
   formSubmitted(@Headers("x-job-agent-form-token") token: string) {
     if (!/^[a-f0-9]{64}$/.test(token ?? ""))
@@ -223,6 +242,42 @@ export class WorkflowController {
       .filter((q): q is string => typeof q === "string" && q.length <= 500)
       .slice(0, 80);
     return this.forms.draft(token, questions);
+  }
+
+  @Post("workflow/forms/plan")
+  formPlan(
+    @Headers("x-job-agent-form-token") token: string,
+    @Body() body: { observation?: unknown },
+  ) {
+    if (!/^[a-f0-9]{64}$/.test(token ?? ""))
+      throw new BadRequestException("Invalid form session.");
+    const o = body?.observation as NavigationObservation | undefined;
+    if (
+      !o ||
+      typeof o.pageUrl !== "string" ||
+      o.pageUrl.length > 2000 ||
+      typeof o.heading !== "string" ||
+      o.heading.length > 1000 ||
+      typeof o.login !== "boolean" ||
+      typeof o.captcha !== "boolean" ||
+      !Array.isArray(o.missing) ||
+      o.missing.length > 80 ||
+      !o.missing.every((v) => typeof v === "string" && v.length <= 500) ||
+      !Array.isArray(o.buttons) ||
+      o.buttons.length > 40 ||
+      !o.buttons.every(
+        (b) =>
+          b &&
+          Number.isInteger(b.id) &&
+          typeof b.label === "string" &&
+          b.label.length <= 200 &&
+          typeof b.href === "string" &&
+          b.href.length <= 2000 &&
+          typeof b.withinForm === "boolean",
+      )
+    )
+      throw new BadRequestException("Invalid navigation observation.");
+    return this.forms.plan(token, o);
   }
 
   @Post("workflow/forms/skip")
