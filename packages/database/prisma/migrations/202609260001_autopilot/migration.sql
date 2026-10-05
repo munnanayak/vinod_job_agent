@@ -1,0 +1,15 @@
+ALTER TABLE "JobOpening" ADD COLUMN "startup" BOOLEAN NOT NULL DEFAULT false, ADD COLUMN "emailSourceUrl" TEXT NOT NULL DEFAULT '';
+CREATE TABLE "JobBoard" (
+"id" TEXT PRIMARY KEY, "source" TEXT NOT NULL, "board" TEXT NOT NULL, "company" TEXT NOT NULL, "origin" TEXT NOT NULL,
+"startup" BOOLEAN NOT NULL DEFAULT false, "enabled" BOOLEAN NOT NULL DEFAULT true, "lastScannedAt" TIMESTAMP(3), "lastError" TEXT NOT NULL DEFAULT '',
+"createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX "JobBoard_source_board_key" ON "JobBoard"("source", "board");
+CREATE TABLE "CompanyContact" (
+"key" TEXT PRIMARY KEY, "name" TEXT NOT NULL, "domain" TEXT NOT NULL, "email" TEXT NOT NULL DEFAULT '', "evidence" TEXT NOT NULL DEFAULT '',
+"sourceUrl" TEXT NOT NULL DEFAULT '', "checkedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE "AgentRun" (
+"id" TEXT PRIMARY KEY, "trigger" TEXT NOT NULL, "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "finishedAt" TIMESTAMP(3),
+"summary" JSONB, "error" TEXT NOT NULL DEFAULT ''
+);

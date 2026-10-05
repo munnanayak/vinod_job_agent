@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client"
+  output = "../src/generated"
+}
+datasource db {
+  provider = "postgresql"
+}
+model CandidateProfile {
+  id                String   @id @default(uuid())
+  ownerKey          String   @unique @default("local")
+  email             String @default("")
+  phone             String @default("")
+  portfolioUrl      String @default("")
+  githubUrl         String @default("")
+  firstName         String @default("")
+  lastName          String @default("")
+  linkedinUrl       String @default("")
+  currentCity       String @default("")
+  country           String @default("")
+  summary           String @default("")
+  resume            Resume?
+  name              String
+  currentTitle      String
+  yearsOfExperience Float
+  locations         String[]
+  remotePreference  Boolean?
+  targetRoles       String[]
+  excludedRoles     String[]
+  minimumSalary     Float?
+  currency          String
+  noticePeriodDays  Int?
+  workAuthorization String
+  skills            String[]
+  education         Json
+  experience        Json
+  projects          Json
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Resume {
+  id          String @id @default(uuid())
+  candidateId String @unique
+  candidate   CandidateProfile @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  fileName    String
+  mimeType    String @default("application/pdf")
+  sha256      String
+  sizeBytes   Int
+  content     Bytes
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model GoogleConnection {
+  id String @id @default("local")
+  email String
+  encryptedRefreshToken String
+  scopes String
+  updatedAt DateTime @updatedAt
+}
+model JobOpening {
+  id String @id @default(uuid())
+  source String
+  board String
+  externalId String
+  company String
+  title String
+  location String
+  salary String @default("Not disclosed")
+  url String @unique
+  description String
+  email String @default("")
+  emailEvidence String @default("")
+  matchScore Int?
+  matchReason String @default("Not analyzed")
+  matchedSkills String[]
+  missingSkills String[]
+  review String @default("PENDING")
+  sheetExportedAt DateTime?
+  startup Boolean @default(false)
+  emailSourceUrl String @default("")
+  discoveredAt DateTime @default(now())
+  application JobApplication?
+  @@unique([source, board, externalId])
+}
+model PublishBatch {
+  id String @id @default(uuid())
+  fingerprint String
+  snapshot Json
+  state String @default("PREVIEW")
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  result Json?
+}
+model JobApplication {
+  id String @id @default(uuid())
+  jobId String @unique
+  job JobOpening @relation(fields:[jobId], references:[id])
+  batchId String
+  status String
+  recipient String
+  subject String
+  body String
+  resumeHash String
+  gmailMessageId String?
+  gmailThreadId String?
+  detail String @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model JobNotification {
+  id String @id
+  jobId String
+  title String
+  snippet String
+  createdAt DateTime @default(now())
+}
+
+// Company job boards to scan. Grows automatically when other sources link to new boards.
+model JobBoard {
+  id String @id @default(uuid())
+  source String
+  board String
+  company String
+  origin String
+  startup Boolean @default(false)
+  enabled Boolean @default(true)
+  lastScannedAt DateTime?
+  lastError String @default("")
+  createdAt DateTime @default(now())
+  @@unique([source, board])
+}
+// Published hiring email found on a company's own website, cached per company.
+model CompanyContact {
+  key String @id
+  name String
+  domain String
+  email String @default("")
+  evidence String @default("")
+  sourceUrl String @default("")
+  checkedAt DateTime @default(now())
+}
+model AgentRun {
+  id String @id @default(uuid())
+  trigger String
+  startedAt DateTime @default(now())
+  finishedAt DateTime?
+  summary Json?
+  error String @default("")
+}
+// Answers you gave on earlier application forms, reused when the same question appears again.
+model SavedAnswer {
+  key String @id
+  question String
+  answer String
+  updatedAt DateTime @updatedAt
+}
+
+// Provider cursor and request timestamps survive restarts.
+model DiscoveryState {
+  source String @id
+  value Json
+  updatedAt DateTime @updatedAt
+}
+
+// Fetched postings wait here until discovery can analyze them.
+model DiscoveryPending {
+  id String @id
+  posting Json
+  createdAt DateTime @default(now())
+  @@index([createdAt])
+}

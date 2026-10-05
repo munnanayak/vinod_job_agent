@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+.local/
+*.log
+packages/database/src/generated/
+
+.pnpm-store/
+
+# Downloaded Google OAuth credentials
+client_secret_*.json

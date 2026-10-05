@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Job Agent Form Assistant</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <h1>Prepare your application</h1>
+    <p>
+      Open the exact application linked from the dashboard. Paste its
+      preparation code below.
+    </p>
+    <label for="code">Preparation code</label
+    ><input
+      id="code"
+      type="password"
+      autocomplete="off"
+      spellcheck="false"
+      maxlength="64"
+    />
+    <p>
+      This fills empty contact fields and uploads your saved PDF to the
+      employer's form. Existing values, consent choices and custom answers are
+      left for you to review.
+    </p>
+    <button id="fill">Fill &amp; attach CV</button>
+    <p id="result" role="status" aria-live="polite"></p>
+    <ul id="details"></ul>
+    <p class="note">
+      You complete any CAPTCHA and click Submit. LinkedIn, embedded forms and
+      unsupported pages need manual entry. No background browsing or
+      submissions.
+    </p>
+    <script src="fill.js"></script>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "@job-agent/api",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsc -p tsconfig.json && node --watch dist/main.js",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "worker": "node dist/worker.js"
+  },
+  "dependencies": {
+    "@job-agent/database": "workspace:*",
+    "@job-agent/types": "workspace:*",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.0",
+    "dotenv": "^17.0.0"
+  }
+}

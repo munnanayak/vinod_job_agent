@@ -1,0 +1,25 @@
+{
+  "name": "job-agent",
+  "private": true,
+  "packageManager": "pnpm@11.20.0",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @job-agent/api --filter @job-agent/web dev",
+    "build": "pnpm --filter @job-agent/types build && pnpm --filter @job-agent/database build && pnpm --filter @job-agent/api build && pnpm --filter @job-agent/web build",
+    "typecheck": "pnpm build",
+    "db:generate": "pnpm --filter @job-agent/database generate",
+    "db:migrate": "pnpm --filter @job-agent/database migrate",
+    "test": "node --test tests/*.test.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "start": "pnpm --filter @job-agent/api start",
+    "worker": "pnpm --filter @job-agent/api worker",
+    "check": "pnpm build && pnpm test",
+    "doctor": "node scripts/doctor.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "prettier": "^3.9.9",
+    "typescript": "~5.9.3"
+  }
+}
