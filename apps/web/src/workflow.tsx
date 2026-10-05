@@ -176,13 +176,7 @@ export function Workflow() {
     instructions: string;
   } | null>(null);
   const [showAll, setShowAll] = useState(false);
-  const [autoSubmit, setAutoSubmit] = useState(() => {
-    try {
-      return localStorage.getItem("job-agent-auto-submit") === "1";
-    } catch {
-      return false;
-    }
-  });
+  const [autoSubmit, setAutoSubmit] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -317,7 +311,7 @@ export function Workflow() {
     const tab = window.open("about:blank", "_blank");
     if (!tab) {
       setError(
-        "Chrome blocked the new tab. Allow pop-ups for this page (icon at the right of the address bar), then click Start applying again.",
+        "Chrome blocked the new tab. Allow pop-ups for this page (icon at the right of the address bar), then click Apply next 10 again.",
       );
       reveal();
       return;
@@ -475,7 +469,7 @@ export function Workflow() {
               Jobs are added to your Google Sheet when connected. This step
               never applies to anything.
               {overview?.settings.runEveryHours
-                ? ` It also runs by itself every ${overview.settings.runEveryHours} hours while the API is running and the computer is awake.`
+                ? ` It also finds jobs every ${overview.settings.runEveryHours} hours while the API service is running. Scheduled discovery never starts applications.`
                 : ""}
             </p>
             <p>
@@ -521,7 +515,9 @@ export function Workflow() {
                       (r.summary.discovery.errors.length
                         ? `, ${r.summary.discovery.errors.length} sources failed`
                         : "")
-                    : "running…"}
+                    : r.finishedAt
+                      ? "finished"
+                      : "finding jobs…"}
               </small>
             ))}
           </div>
@@ -582,8 +578,8 @@ export function Workflow() {
                   opens in a new tab and the Form Assistant extension fills it.
                   After each application is submitted, the next job opens in
                   that same tab by itself and is recorded here. The agent stops
-                  after 3 applications; click Start applying again for the next
-                  3.
+                  after 10 applications; click Apply next 10 again for the next
+                  batch. Applying starts only when you click this button.
                 </p>
                 <label className="checkbox">
                   <input
@@ -591,12 +587,6 @@ export function Workflow() {
                     checked={autoSubmit}
                     onChange={(e) => {
                       setAutoSubmit(e.target.checked);
-                      try {
-                        localStorage.setItem(
-                          "job-agent-auto-submit",
-                          e.target.checked ? "1" : "0",
-                        );
-                      } catch {}
                     }}
                   />
                   Submit automatically when every required field is filled
@@ -612,7 +602,7 @@ export function Workflow() {
                     disabled={Boolean(busy) || !connected}
                     onClick={startApplying}
                   >
-                    {busy === "batch" ? "Preparing…" : "Start applying"}
+                    {busy === "batch" ? "Preparing…" : "Apply next 10"}
                   </button>
                 </p>
               </div>
@@ -620,9 +610,9 @@ export function Workflow() {
                 <span className="pill">Only jobs with a hiring email</span>
                 <h3>Email your CV</h3>
                 <p>
-                  Shows every email exactly as it will be sent from your Gmail,
-                  with your CV attached. Nothing goes out until you click Send.
-                  Approved jobs without an email are added to{" "}
+                  Shows up to 10 emails exactly as they will be sent from your
+                  Gmail, with your CV attached. Nothing goes out until you click
+                  Send. Approved jobs without an email are added to{" "}
                   <strong>Your applications</strong> for you to apply yourself.
                 </p>
                 <button

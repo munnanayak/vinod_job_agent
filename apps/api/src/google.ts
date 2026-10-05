@@ -53,12 +53,21 @@ function encrypt(text: string) {
 }
 
 function decrypt(value: string) {
-  const [iv, tag, data] = value.split(".").map((p) => Buffer.from(p, "base64"));
-  const decipher = createDecipheriv("aes-256-gcm", key(), iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(data), decipher.final()]).toString(
-    "utf8",
-  );
+  const encryptionKey = key();
+  try {
+    const parts = value.split(".");
+    if (parts.length !== 3) throw new Error("Invalid encrypted token");
+    const [iv, tag, data] = parts.map((p) => Buffer.from(p, "base64"));
+    const decipher = createDecipheriv("aes-256-gcm", encryptionKey, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(data), decipher.final()]).toString(
+      "utf8",
+    );
+  } catch {
+    throw new PreconditionFailedException(
+      "The saved Google connection cannot be decrypted. Restore the TOKEN_ENCRYPTION_KEY used when Google was connected, or disconnect and reconnect Google with the current key.",
+    );
+  }
 }
 
 @Injectable()
@@ -167,11 +176,16 @@ export class GoogleIntegration {
     });
     if (!c) return;
     // Best effort: revoke at Google, then always forget locally.
-    await fetch("https://oauth2.googleapis.com/revoke", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ token: decrypt(c.encryptedRefreshToken) }),
-    }).catch(() => undefined);
+    try {
+      await fetch("https://oauth2.googleapis.com/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ token: decrypt(c.encryptedRefreshToken) }),
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch {
+      // A changed encryption key must not prevent disconnecting a stale connection.
+    }
     await this.db.client.googleConnection.delete({ where: { id: "local" } });
     this.access = null;
   }
@@ -193,6 +207,7 @@ export class GoogleIntegration {
         client_secret: env("GOOGLE_CLIENT_SECRET"),
         ...fields,
       }),
+      signal: AbortSignal.timeout(30_000),
     });
     const data = await response.json();
     if (!response.ok)

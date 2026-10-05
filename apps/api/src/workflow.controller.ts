@@ -119,7 +119,7 @@ export class WorkflowController {
   @Post("workflow/forms/batch")
   batchForms(@Body() body: { limit?: unknown; restart?: unknown }) {
     const limit =
-      typeof body?.limit === "number"
+      typeof body?.limit === "number" && Number.isFinite(body.limit)
         ? Math.min(Math.max(1, Math.floor(body.limit)), 25)
         : 10;
     return this.forms.batch(limit, body?.restart === true);

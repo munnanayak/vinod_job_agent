@@ -1408,6 +1408,7 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
         });
       }
     }
+    preview.items = preview.items.slice(0, 10);
     return preview;
   }
 
@@ -1597,7 +1598,22 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  onModuleInit() {
+  async onModuleInit() {
+    // Holding the shared lock proves no API or worker still owns these runs.
+    try {
+      await this.exclusive(() =>
+        this.db.client.agentRun.updateMany({
+          where: { finishedAt: null },
+          data: {
+            finishedAt: new Date(),
+            error:
+              "Interrupted by an API or worker restart. Click Find new jobs to retry.",
+          },
+        }),
+      );
+    } catch (error) {
+      if (!(error instanceof ConflictException)) throw error;
+    }
     // Checks every 10 minutes whether a scheduled run is due; restarts don't cause extra runs.
     if (process.env.SCHEDULER_ENABLED === "false") return;
     const tick = () =>
@@ -1804,7 +1820,7 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
       include: { application: true },
     });
     if (!job) throw new BadRequestException("Unknown job.");
-    const sheet = parseReviewRows(await this.google.readSheet());
+    const sheet = this.formReviewRows(await this.google.readSheet());
     const row = sheet.get(id);
     if (!approved(row) || !row || !unchanged(row, rowFor(job)))
       throw new PreconditionFailedException(
@@ -1848,7 +1864,7 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
 
   /** Approved, unchanged sheet rows whose job has a Greenhouse/Lever/Ashby form and no application yet. */
   async approvedFormJobIds() {
-    const sheet = parseReviewRows(await this.google.readSheet());
+    const sheet = this.formReviewRows(await this.google.readSheet());
     const approvedIds = [...sheet]
       .filter(([, row]) => approved(row))
       .map(([id]) => id);
@@ -1883,6 +1899,18 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
         return true;
       })
       .map((job) => job.id);
+  }
+
+  private formReviewRows(values: string[][]) {
+    try {
+      // An unbound row can never authorize an application. Keep the header
+      // and check duplicates/approval/protected fields for all identifiable jobs.
+      return parseReviewRows(
+        values.filter((row, index) => index === 0 || Boolean(row[0]?.trim())),
+      );
+    } catch (error) {
+      throw new BadRequestException((error as Error).message);
+    }
   }
 
   /** You clicked "Mark as submitted" on a filled form. */

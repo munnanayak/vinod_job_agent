@@ -279,12 +279,11 @@ export class FormAssistant {
         "Open the application. The Form Assistant fills it automatically; review every field, answer what is left, solve any CAPTCHA and submit yourself.",
     };
   }
-  // Applications submitted since you last clicked Start applying. The queue
-  // pauses after APPLY_PER_SESSION (default 3) so each batch stays reviewable.
+  // Each dashboard click permits at most ten submissions, one form at a time.
   private appliedThisSession = 0;
+  private applying = false;
   private sessionLimit() {
-    const value = Number(process.env.APPLY_PER_SESSION);
-    return Number.isInteger(value) && value > 0 ? value : 3;
+    return 10;
   }
   // Jobs you chose to skip in the form tab, so the queue doesn't offer them again.
   private passed = new Set<string>();
@@ -293,6 +292,7 @@ export class FormAssistant {
     if (restart) {
       this.passed.clear();
       this.appliedThisSession = 0;
+      this.applying = true;
     }
     const ids = (await this.workflow.approvedFormJobIds()).filter(
       (id) => !this.passed.has(id),
@@ -387,10 +387,18 @@ export class FormAssistant {
         "This form session expired. Mark it applied in the dashboard.",
       );
     this.reports.delete(reportToken);
-    await this.workflow.markFormSubmitted(report.jobId);
+    try {
+      await this.workflow.markFormSubmitted(report.jobId);
+    } catch (error) {
+      this.reports.set(reportToken, report);
+      throw error;
+    }
+    this.passed.add(report.jobId);
     this.appliedThisSession++;
-    if (this.appliedThisSession >= this.sessionLimit())
+    if (this.appliedThisSession >= this.sessionLimit()) {
+      this.applying = false;
       return { ok: true, next: null, paused: this.appliedThisSession };
+    }
     return { ok: true, next: await this.next() };
   }
   /** Chooses among a dropdown's options when your profile determines the answer. */
@@ -510,6 +518,8 @@ export class FormAssistant {
   }
   // The next approved job's one-use link, so the same tab can continue the queue.
   private async next() {
+    if (!this.applying || this.appliedThisSession >= this.sessionLimit())
+      return null;
     try {
       return (await this.batch(1)).ready[0]?.openUrl ?? null;
     } catch {

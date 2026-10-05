@@ -462,3 +462,110 @@ test("changing profile target roles invalidates approval for an old role", async
   );
   assert.equal(f.sent.length, 0);
 });
+
+test("unidentified sheet rows cannot authorize forms or break valid form approvals", async () => {
+  const f = fakeWorkflow();
+  f.rows.push(["", "APPROVED", "Unidentified company"]);
+  assert.equal((await f.workflow.reviewedFormJob("job0")).job.id, "job0");
+  await assert.rejects(() => f.workflow.preview(), /no Job ID/);
+  f.rows.push([...f.rows[1]]);
+  await assert.rejects(
+    () => f.workflow.reviewedFormJob("job0"),
+    (error) => {
+      assert.equal(error.getStatus(), 400);
+      assert.match(error.message, /Duplicate Job ID/);
+      return true;
+    },
+  );
+});
+
+test("a clicked application queue stops after ten submissions and needs another click", async () => {
+  const submitted = [];
+  const service = new FormAssistant({
+    approvedFormJobIds: async () => [],
+    markFormSubmitted: async (id) => submitted.push(id),
+  });
+  await service.batch(1, true);
+  let prepared = 0;
+  service.prepare = async (jobId) => ({
+    jobId,
+    url,
+    openUrl: url + "#job-agent=code",
+  });
+  service.workflow.approvedFormJobIds = async () => [`next${prepared++}`];
+  const original = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({ id: "12345678-aaaa-bbbb-cccc-123456789012" }),
+    );
+  try {
+    for (let i = 0; i < 10; i++) {
+      service.reports.set(`token${i}`, {
+        jobId: `job${i}`,
+        company: "Acme",
+        expires: Date.now() + 10000,
+      });
+      const result = await service.submitted(`token${i}`);
+      if (i < 9) assert.ok(result.next);
+      else assert.deepEqual(result, { ok: true, next: null, paused: 10 });
+    }
+    assert.equal(submitted.length, 10);
+    assert.equal(prepared, 9);
+    assert.equal(await service.next(), null);
+    await service.batch(1, true);
+    assert.ok(await service.next());
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("standalone form submissions do not start an application queue", async () => {
+  const service = new FormAssistant({ markFormSubmitted: async () => {} });
+  service.reports.set("token", {
+    jobId: "job",
+    company: "Acme",
+    expires: Date.now() + 10000,
+  });
+  assert.deepEqual(await service.submitted("token"), { ok: true, next: null });
+});
+
+test("email previews cap each manually published batch at ten jobs", async () => {
+  const f = fakeWorkflow(12);
+  assert.equal((await f.workflow.preview()).items.length, 10);
+  assert.equal(f.sent.length, 0);
+});
+
+test("startup recovers interrupted discovery only while owning the shared lock", async () => {
+  const old = process.env.SCHEDULER_ENABLED;
+  process.env.SCHEDULER_ENABLED = "false";
+  const updates = [];
+  let acquired = true;
+  const workflow = new JobWorkflow(
+    {
+      client: {
+        $transaction: async (work) =>
+          work({ $queryRaw: async () => [{ acquired }] }),
+        agentRun: {
+          updateMany: async (query) => {
+            updates.push(query);
+            return { count: 2 };
+          },
+        },
+      },
+    },
+    {},
+  );
+  try {
+    await workflow.onModuleInit();
+    assert.equal(updates.length, 1);
+    assert.deepEqual(updates[0].where, { finishedAt: null });
+    assert.match(updates[0].data.error, /restart/);
+    assert.ok(updates[0].data.finishedAt instanceof Date);
+    acquired = false;
+    await workflow.onModuleInit();
+    assert.equal(updates.length, 1);
+  } finally {
+    if (old === undefined) delete process.env.SCHEDULER_ENABLED;
+    else process.env.SCHEDULER_ENABLED = old;
+  }
+});
