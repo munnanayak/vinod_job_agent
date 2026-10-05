@@ -97,6 +97,7 @@ class ProfileController {
 })
 class AppModule {}
 const app = await NestFactory.create(AppModule);
+const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3000);
 app.setGlobalPrefix("api");
 app.enableCors(
   (
@@ -136,11 +137,17 @@ app.use(
       "http://127.0.0.1:5173",
     ]);
     const hosts = new Set([
-      `localhost:${process.env.API_PORT ?? 3000}`,
-      `127.0.0.1:${process.env.API_PORT ?? 3000}`,
+      `localhost:${port}`,
+      `127.0.0.1:${port}`,
+      ...(process.env.RENDER_EXTERNAL_HOSTNAME
+        ? [process.env.RENDER_EXTERNAL_HOSTNAME]
+        : []),
+      ...(process.env.API_PUBLIC_URL
+        ? [new URL(process.env.API_PUBLIC_URL).host]
+        : []),
     ]);
     if (!hosts.has(req.headers.host ?? ""))
-      return res.status(403).json({ message: "Unrecognized local host" });
+      return res.status(403).json({ message: "Unrecognized host" });
     const extensionClaim =
       /^\/api\/workflow\/forms\/(claim|closed|submitted|skip|answers|options)$/.test(
         req.url,
@@ -162,4 +169,4 @@ app.use(
   },
 );
 app.enableShutdownHooks();
-await app.listen(Number(process.env.API_PORT ?? 3000), "127.0.0.1");
+await app.listen(port, process.env.PORT ? "0.0.0.0" : "127.0.0.1");
