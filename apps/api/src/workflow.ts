@@ -423,6 +423,19 @@ export function exportSheetRows(values: string[][]) {
   return { ids, rowsWithoutId };
 }
 
+export function availableSheetRows(values: string[][], count: number) {
+  const available: number[] = [];
+  for (
+    let index = 1;
+    index < values.length && available.length < count;
+    index++
+  )
+    if (!values[index].some((cell) => cell.trim())) available.push(index + 1);
+  for (let row = values.length + 1; available.length < count; row++)
+    available.push(row);
+  return available;
+}
+
 export function rowFor(job: Job, status = "Not submitted"): string[] {
   return [
     job.id,
@@ -1211,8 +1224,7 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
     const values = await this.google.readSheet();
     const needsHeader =
       !values.length || values[0].every((cell) => !cell.trim());
-    if (needsHeader)
-      await this.google.writeRange("A1:T1", [HEADERS]);
+    if (needsHeader) await this.google.writeRange("A1:T1", [HEADERS]);
     const { ids: inSheet, rowsWithoutId } = exportSheetRows(
       needsHeader ? [HEADERS] : values,
     );
@@ -1239,16 +1251,22 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
       jobs.filter((j) => !inSheet.has(j.id) && experienceFits(j.description)),
       inSheet,
     );
+    const targetRows = availableSheetRows(
+      needsHeader ? [HEADERS] : values,
+      fresh.length,
+    );
+    const exportRows = fresh.map((job) =>
+      rowFor(
+        job,
+        job.application ? statusLabel(job.application.status) : undefined,
+      ),
+    );
     for (let start = 0; start < fresh.length; start += 100) {
-      await this.google.appendRows(
-        fresh
-          .slice(start, start + 100)
-          .map((j) =>
-            rowFor(
-              j,
-              j.application ? statusLabel(j.application.status) : undefined,
-            ),
-          ),
+      await this.google.writeRows(
+        exportRows.slice(start, start + 100).map((row, offset) => ({
+          row: targetRows[start + offset],
+          values: row,
+        })),
       );
     }
     if (fresh.length) {

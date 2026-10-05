@@ -11,6 +11,7 @@ import {
 } from "../apps/api/dist/workflow-rules.js";
 import {
   assessMatch,
+  availableSheetRows,
   exportEligibleJobs,
   exportSheetRows,
   locationFits,
@@ -64,6 +65,20 @@ test("sheet export ignores populated rows without IDs but reports them", () => {
   assert.deepEqual([...result.ids], ["job-1"]);
   assert.equal(result.rowsWithoutId, 1);
   assert.throws(() => exportSheetRows([["Wrong header"]]), /headers changed/);
+});
+
+test("sheet export fills blank rows first and never overwrites incomplete rows", () => {
+  const orphan = HEADERS.map((_, index) =>
+    index === 2 ? "Keep this existing content" : "",
+  );
+  const existing = HEADERS.map((_, index) =>
+    index === 0 ? "existing-id" : "",
+  );
+
+  assert.deepEqual(
+    availableSheetRows([HEADERS, existing, [], orphan, []], 4),
+    [3, 5, 6, 7],
+  );
 });
 
 test("application email needs an explicit instruction and skips accommodation addresses", () => {

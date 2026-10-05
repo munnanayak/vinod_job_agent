@@ -303,6 +303,20 @@ export class GoogleIntegration {
     );
   }
 
+  async writeRows(rows: { row: number; values: string[] }[]) {
+    if (!rows.length) return;
+    await this.json(`${this.sheetBase()}:batchUpdate`, undefined, {
+      method: "POST",
+      body: JSON.stringify({
+        valueInputOption: "RAW",
+        data: rows.map(({ row, values }) => ({
+          range: `'${tabName().replace(/'/g, "''")}'!A${row}:T${row}`,
+          values: [values],
+        })),
+      }),
+    });
+  }
+
   /** Delete selected rows, using zero-based indexes and preserving the header. */
   async deleteSheetRows(indexes: number[]) {
     if (!indexes.length) return;
