@@ -329,7 +329,7 @@ export function Workflow() {
           tab.close();
           return r.skipped.length
             ? `None of your approved jobs could be prepared: ${r.skipped[0].reason}`
-            : "No approved applications are ready in the configured Jobs tab. Check that the Review column says APPROVED and each row has its original Job ID. Form filling supports Greenhouse, Lever and Ashby URLs; other jobs need a confirmed hiring email or a manual application.";
+            : "No approved applications are ready in the configured Jobs tab. Check that the Review column says APPROVED and each row has its original Job ID. Form filling supports Greenhouse, Lever, Ashby and JOIN URLs; other jobs need a confirmed hiring email or a manual application.";
         }
         tab.opener = null;
         tab.location.href = first.openUrl + (autoSubmit ? "&auto=1" : "");
@@ -459,10 +459,9 @@ export function Workflow() {
               </button>
             </div>
             <p>
-              Searches {overview?.boards ?? "the"} company job boards, Hacker
-              News, Himalayas, RemoteOK, Remotive and your LinkedIn and Naukri
-              job-alert emails, plus configured Adzuna and Google Jobs markets.
-              Roles come from your profile.{" "}
+              Searches {overview?.boards ?? "the"} Greenhouse, Lever and Ashby
+              company job boards. Only jobs with supported application forms are
+              saved and exported. Roles come from your profile.{" "}
               {overview?.settings.locationScope === "worldwide"
                 ? "Worldwide discovery includes relocation opportunities; review location and work authorization before applying."
                 : "Discovery follows your profile location preferences."}{" "}
@@ -473,15 +472,7 @@ export function Workflow() {
                 : ""}
             </p>
             <p>
-              Adzuna:{" "}
-              {overview?.settings.adzunaConfigured
-                ? `${overview.settings.adzunaCountries.length} markets, rotated within request limits`
-                : "needs ADZUNA_APP_ID and ADZUNA_APP_KEY"}
-              . Google Jobs:{" "}
-              {overview?.settings.googleJobsConfigured
-                ? `${overview.settings.googleCountries.length} markets via SerpApi`
-                : "needs SERPAPI_API_KEY"}
-              . {overview?.queued ?? 0} fetched jobs waiting for processing.
+              {overview?.queued ?? 0} supported jobs waiting for processing.
             </p>
             {overview?.sourceHealth?.map((source) => (
               <small className="run" key={source.board}>
@@ -574,9 +565,9 @@ export function Workflow() {
                 <span className="pill go">Most jobs</span>
                 <h3>Apply on company forms</h3>
                 <p>
-                  For Greenhouse, Lever and Ashby jobs. The first approved job
-                  opens in a new tab and the Form Assistant extension fills it.
-                  After each application is submitted, the next job opens in
+                  For Greenhouse, Lever, Ashby and JOIN jobs. The first approved
+                  job opens in a new tab and the Form Assistant extension fills
+                  it. After each application is submitted, the next job opens in
                   that same tab by itself and is recorded here. The agent stops
                   after 10 applications; click Apply next 10 again for the next
                   batch. Applying starts only when you click this button. Jobs

@@ -6,7 +6,7 @@ import {
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { Database } from "./database.js";
 
-// Send applications, read replies and LinkedIn job-alert emails, edit the review sheet.
+// Send reviewed applications, read replies and edit the review sheet.
 // gmail.metadata is not requested: when granted it blocks reading message bodies.
 const SCOPES = [
   "openid",
@@ -380,82 +380,5 @@ export class GoogleIntegration {
         }),
       )
       .filter((m: { from: string }) => !m.from.toLowerCase().includes(sender));
-  }
-
-  /**
-   * LinkedIn job-alert emails received since `after`. Only messages whose sender
-   * is a linkedin.com address are returned; nothing else in the mailbox is read.
-   */
-  linkedInAlerts(after: Date) {
-    // Only LinkedIn's job-alert senders; LinkedIn messages and notifications are never opened.
-    return this.alertEmails(
-      ["jobalerts-noreply@linkedin.com", "jobs-noreply@linkedin.com"],
-      after,
-    );
-  }
-
-  /** Naukri job-alert emails received since `after`; only Naukri's alert sender is read. */
-  naukriAlerts(after: Date) {
-    return this.alertEmails(["naukrialerts@naukri.com"], after);
-  }
-
-  // Emails from exactly these sender addresses; nothing else in the mailbox is read.
-  private async alertEmails(senders: string[], after: Date) {
-    const q = `from:(${senders.join(" OR ")}) after:${Math.floor(after.getTime() / 1000)}`;
-    const ids: string[] = [];
-    let page = "";
-    do {
-      const list = await this.json(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100&q=${encodeURIComponent(q)}${page ? `&pageToken=${page}` : ""}`,
-      );
-      ids.push(...((list.messages ?? []) as { id: string }[]).map((m) => m.id));
-      page = list.nextPageToken ?? "";
-    } while (page && ids.length < 200);
-    const out: {
-      id: string;
-      date: Date;
-      subject: string;
-      text: string;
-      html: string;
-    }[] = [];
-    for (const id of ids.slice(0, 200)) {
-      const m = await this.json(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(id)}?format=full`,
-      );
-      const header = (name: string) =>
-        m.payload?.headers?.find(
-          (h: { name: string }) => h.name.toLowerCase() === name,
-        )?.value ?? "";
-      const from = header("from").toLowerCase().trim();
-      if (!senders.some((s) => from === s || from.endsWith(`<${s}>`))) continue;
-      const parts: { mimeType: string; data: string }[] = [];
-      const walk = (part: {
-        mimeType?: string;
-        body?: { data?: string };
-        parts?: unknown[];
-      }) => {
-        if (part.body?.data && part.mimeType)
-          parts.push({
-            mimeType: part.mimeType,
-            data: Buffer.from(part.body.data, "base64url").toString("utf8"),
-          });
-        for (const child of (part.parts ?? []) as (typeof part)[]) walk(child);
-      };
-      walk(m.payload ?? {});
-      out.push({
-        id,
-        date: new Date(Number(m.internalDate)),
-        subject: header("subject"),
-        text: parts
-          .filter((p) => p.mimeType === "text/plain")
-          .map((p) => p.data)
-          .join("\n"),
-        html: parts
-          .filter((p) => p.mimeType === "text/html")
-          .map((p) => p.data)
-          .join("\n"),
-      });
-    }
-    return out;
   }
 }

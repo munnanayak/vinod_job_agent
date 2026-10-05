@@ -51,7 +51,7 @@ const posting = (overrides = {}) => ({
   location: "London, United Kingdom",
   salary: "Not disclosed",
   description: "TypeScript",
-  url: "https://jobs.lever.co/acme/one",
+  url: "https://jobs.lever.co/acme/00000001",
   links: [],
   website: "",
   hiringPost: false,
@@ -262,7 +262,7 @@ function fakeDiscovery() {
     posting(),
     posting({
       externalId: "2",
-      url: "https://jobs.lever.co/acme/two",
+      url: "https://jobs.lever.co/acme/00000002",
       location: "New York, United States",
     }),
   ];
@@ -346,6 +346,28 @@ test("profile-only discovery rejects international locations", async (t) => {
   env(t, { DISCOVERY_LOCATION_SCOPE: "profile" });
   const f = fakeDiscovery();
   assert.equal((await f.workflow.discover()).added, 0);
+});
+
+test("discovery queues only supported applications and resolves employer apply links", async () => {
+  const f = fakeDiscovery();
+  await f.workflow.enqueue([
+    posting({
+      url: "https://news.ycombinator.com/item?id=123",
+      source: "hackernews",
+      links: ["https://join.com/companies/acme/12345-backend-developer"],
+    }),
+    posting({
+      url: "https://linkedin.com/jobs/view/123",
+      source: "linkedin",
+      links: [],
+    }),
+    posting({ url: "https://naukri.com/job/123", source: "naukri", links: [] }),
+  ]);
+  assert.equal(f.queue.size, 1);
+  assert.equal(
+    [...f.queue.values()][0].posting.url,
+    "https://join.com/companies/acme/12345-backend-developer",
+  );
 });
 
 test("shared lock rejects a second process without running discovery", async () => {

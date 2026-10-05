@@ -212,6 +212,19 @@ export class WorkflowController {
     return this.forms.options(token, questions);
   }
 
+  @Post("workflow/forms/draft")
+  formDraft(
+    @Headers("x-job-agent-form-token") token: string,
+    @Body() body: { questions?: unknown },
+  ) {
+    if (!/^[a-f0-9]{64}$/.test(token ?? ""))
+      throw new BadRequestException("Invalid form session.");
+    const questions = (Array.isArray(body?.questions) ? body.questions : [])
+      .filter((q): q is string => typeof q === "string" && q.length <= 500)
+      .slice(0, 80);
+    return this.forms.draft(token, questions);
+  }
+
   @Post("workflow/forms/skip")
   formSkipped(@Headers("x-job-agent-form-token") token: string) {
     if (!/^[a-f0-9]{64}$/.test(token ?? ""))

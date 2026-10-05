@@ -1,9 +1,6 @@
+import { autofillTarget } from "./form-target.js";
 import { experienceFits, maxJobExperience } from "./experience.js";
-import {
-  discoveryConfig,
-  integerSetting,
-  type SearchState,
-} from "./discovery-config.js";
+import { discoveryConfig, integerSetting } from "./discovery-config.js";
 import {
   normalizeLocation,
   postingIdentity,
@@ -18,8 +15,6 @@ import {
 } from "@nestjs/common";
 import type { OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { findHiringEmail, guessCompanyWebsite } from "./careers.js";
-import { boardCandidates, parseAlert, sameRole } from "./linkedin.js";
-import { parseNaukriAlert } from "./naukri.js";
 import { Database } from "./database.js";
 import { GoogleIntegration } from "./google.js";
 import {
@@ -39,7 +34,6 @@ import {
   messageRaw,
   parseReviewRows,
   plainMessage,
-  safeUrl,
   seniorityFits,
   targetRole,
   unchanged,
@@ -558,7 +552,14 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
     if (!postings.length) return;
     await this.db.client.discoveryPending.createMany({
       data: postings
-        .filter((p) => safeUrl(p.url))
+        .map((posting) => {
+          if (autofillTarget(posting)) return posting;
+          const url = posting.links.find((url) =>
+            autofillTarget({ ...posting, url }),
+          );
+          return url ? { ...posting, url } : posting;
+        })
+        .filter((p) => Boolean(autofillTarget(p)))
         .map((p) => ({
           id: digest([p.source, p.board, p.externalId, p.url]),
           posting: p,
@@ -580,7 +581,7 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
     const boards = await this.db.client.jobBoard.findMany({
       where: {
         enabled: true,
-        source: { not: "aggregator" },
+        source: { in: ["greenhouse", "lever", "ashby"] },
         OR: [{ lastScannedAt: null }, { lastScannedAt: { lt: due } }],
       },
       orderBy: [{ lastScannedAt: { sort: "asc", nulls: "first" } }],
@@ -611,16 +612,17 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
       }
     });
     const aggregatorsRun: string[] = [];
-    for (const aggregator of AGGREGATORS) {
-      if (aggregator.ready && !aggregator.ready()) continue;
+    // Employer-written HN posts can provide direct supported application links.
+    // Other aggregators and mailbox alerts are no longer scanned.
+    for (const source of AGGREGATORS.filter(
+      (source) => source.name === "hackernews",
+    )) {
       const state = await this.db.client.jobBoard.upsert({
-        where: {
-          source_board: { source: "aggregator", board: aggregator.name },
-        },
+        where: { source_board: { source: "aggregator", board: source.name } },
         create: {
           source: "aggregator",
-          board: aggregator.name,
-          company: aggregator.name,
+          board: source.name,
+          company: source.name,
           origin: "built-in",
         },
         update: {},
@@ -628,53 +630,29 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
       if (
         !state.enabled ||
         (state.lastScannedAt &&
-          Date.now() - state.lastScannedAt.getTime() <
-            aggregator.everyHours * HOUR)
+          Date.now() - state.lastScannedAt.getTime() < source.everyHours * HOUR)
       )
         continue;
       try {
-        const stored = await this.db.client.discoveryState.findUnique({
-          where: { source: aggregator.name },
-        });
-        const value = stored?.value as SearchState | undefined;
-        const searchState: SearchState = {
-          cursor: value?.cursor ?? 0,
-          requests: value?.requests ?? [],
-        };
-        const errorCount = errors.length;
-        const fetched = await aggregator.run({
-          profile,
-          state: searchState,
-          errors,
-          savePostings: (postings) => this.enqueue(postings),
-          saveState: async (next) => {
-            await this.db.client.discoveryState.upsert({
-              where: { source: aggregator.name },
-              create: { source: aggregator.name, value: next },
-              update: { value: next },
-            });
-          },
-        });
-        await this.enqueue(fetched);
-        postings.push(...fetched);
-        aggregatorsRun.push(aggregator.name);
-        await this.db.client.jobBoard.update({
-          where: { id: state.id },
-          data: {
-            lastScannedAt: new Date(),
-            lastError: errors.slice(errorCount).join("; ").slice(0, 1000),
-          },
-        });
-      } catch (e) {
-        errors.push(
-          `${aggregator.name}: ${(e as Error).message.slice(0, 300)}`,
+        await this.enqueue(
+          await source.run({
+            profile,
+            state: { cursor: 0, requests: [] },
+            errors,
+            saveState: async () => {},
+          }),
         );
+        aggregatorsRun.push(source.name);
         await this.db.client.jobBoard.update({
           where: { id: state.id },
-          data: {
-            lastScannedAt: new Date(),
-            lastError: (e as Error).message.slice(0, 300),
-          },
+          data: { lastScannedAt: new Date(), lastError: "" },
+        });
+      } catch (error) {
+        const message = (error as Error).message.slice(0, 300);
+        errors.push(`${source.name}: ${message}`);
+        await this.db.client.jobBoard.update({
+          where: { id: state.id },
+          data: { lastScannedAt: new Date(), lastError: message },
         });
       }
     }
@@ -811,187 +789,12 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
     return found ? record : null;
   }
 
-  private boardLookups = new Map<
-    string,
-    { at: number; posting: Posting | null }
-  >();
-
-  // Jobs from LinkedIn alert emails in your Gmail. LinkedIn pages are never fetched.
-  private async linkedInPostings(): Promise<{
-    postings: Posting[];
-    emails: number;
-    note: string;
-  }> {
-    const status = await this.google.status();
-    if (!status.connected)
-      return { postings: [], emails: 0, note: "Google not connected" };
-    if (status.needsReconnect)
-      return {
-        postings: [],
-        emails: 0,
-        note: "Reconnect Google to read LinkedIn job alerts",
-      };
-    const state = await this.db.client.jobBoard.upsert({
-      where: {
-        source_board: { source: "aggregator", board: "linkedin-alerts" },
-      },
-      create: {
-        source: "aggregator",
-        board: "linkedin-alerts",
-        company: "LinkedIn job alerts",
-        origin: "built-in",
-      },
-      update: {},
-    });
-    if (
-      state.lastScannedAt &&
-      Date.now() - state.lastScannedAt.getTime() < HOUR
-    )
-      return { postings: [], emails: 0, note: "Read less than an hour ago" };
-    // Overlap one day so alerts that arrived during the last read are not missed.
-    const after = state.lastScannedAt
-      ? new Date(state.lastScannedAt.getTime() - 24 * HOUR)
-      : new Date(Date.now() - 14 * 24 * HOUR);
-    const emails = await this.google.linkedInAlerts(after);
-    const postings = emails.flatMap((email) =>
-      parseAlert(email.text, email.html, email.subject).map((job): Posting => ({
-        source: "linkedin",
-        board: "alerts",
-        externalId: job.id,
-        company: job.company,
-        title: job.title,
-        location: job.location,
-        salary: "Not disclosed",
-        url: job.url,
-        description: "",
-        startup: false,
-        links: [],
-        website: "",
-        hiringPost: false,
-      })),
-    );
-    await this.enqueue(postings);
-    await this.db.client.jobBoard.update({
-      where: { id: state.id },
-      data: { lastScannedAt: new Date(), lastError: "" },
-    });
-    return { postings, emails: emails.length, note: "" };
-  }
-
-  // Jobs from Naukri alert emails in your Gmail. Naukri pages are never fetched.
-  private async naukriPostings() {
-    const status = await this.google.status();
-    if (!status.connected || status.needsReconnect)
-      return { postings: [] as Posting[], emails: 0 };
-    const state = await this.db.client.jobBoard.upsert({
-      where: {
-        source_board: { source: "aggregator", board: "naukri-alerts" },
-      },
-      create: {
-        source: "aggregator",
-        board: "naukri-alerts",
-        company: "Naukri job alerts",
-        origin: "built-in",
-      },
-      update: {},
-    });
-    if (
-      state.lastScannedAt &&
-      Date.now() - state.lastScannedAt.getTime() < HOUR
-    )
-      return { postings: [] as Posting[], emails: 0 };
-    // Overlap one day so alerts that arrived during the last read are not missed.
-    const after = state.lastScannedAt
-      ? new Date(state.lastScannedAt.getTime() - 24 * HOUR)
-      : new Date(Date.now() - 14 * 24 * HOUR);
-    const emails = await this.google.naukriAlerts(after);
-    const postings = emails.flatMap((email) =>
-      parseNaukriAlert(email.html).map((job): Posting => ({
-        source: "naukri",
-        board: "alerts",
-        externalId: job.id,
-        company: job.company,
-        title: job.title,
-        location: job.location,
-        salary: job.salary,
-        url: job.url,
-        description: "",
-        startup: false,
-        links: [],
-        website: "",
-        hiringPost: false,
-      })),
-    );
-    await this.enqueue(postings);
-    await this.db.client.jobBoard.update({
-      where: { id: state.id },
-      data: { lastScannedAt: new Date(), lastError: "" },
-    });
-    return { postings, emails: emails.length };
-  }
-
-  // The same job on the company's own Greenhouse/Lever/Ashby board, which has the full
-  // description and a form the Form Assistant supports.
-  private async onCompanyBoard(job: Posting) {
-    const key = postingIdentity(job);
-    const cached = this.boardLookups.get(key);
-    if (cached && Date.now() - cached.at < 24 * HOUR) return cached.posting;
-    const known = await this.db.client.jobBoard.findMany({
-      where: {
-        company: { equals: job.company, mode: "insensitive" },
-        source: { not: "aggregator" },
-        enabled: true,
-      },
-    });
-    const guesses = boardCandidates(job.company).flatMap((board) =>
-      ["ashby", "greenhouse", "lever"].map((source) => ({
-        source,
-        board,
-        company: job.company,
-      })),
-    );
-    let found: Posting | null = null;
-    for (const ref of [...known, ...guesses]) {
-      const postings = await fetchBoard(ref).catch(() => []);
-      const match = postings.find(
-        (p) =>
-          sameRole(p.title, job.title) &&
-          normalizeLocation(p.location) === normalizeLocation(job.location),
-      );
-      if (match) {
-        found = { ...match, company: job.company };
-        await this.db.client.jobBoard.createMany({
-          data: [
-            {
-              source: ref.source,
-              board: ref.board,
-              company: job.company,
-              origin: "found via LinkedIn alert",
-            },
-          ],
-          skipDuplicates: true,
-        });
-        break;
-      }
-    }
-    this.boardLookups.set(key, { at: Date.now(), posting: found });
-    return found;
-  }
-
   private async discoverRun() {
     const profile = await this.profile();
     const { discoveryLimit } = autopilot();
     this.webSearchesLeft = setting("COMPANY_SEARCHES_PER_RUN", 25);
     const { boardsScanned, aggregatorsRun, newBoards, errors } =
       await this.collect(profile);
-    const linkedIn = await this.linkedInPostings().catch((e) => {
-      errors.push(`linkedin alerts: ${(e as Error).message.slice(0, 200)}`);
-      return { postings: [], emails: 0, note: "failed" };
-    });
-    const naukri = await this.naukriPostings().catch((e) => {
-      errors.push(`naukri alerts: ${(e as Error).message.slice(0, 200)}`);
-      return { postings: [] as Posting[], emails: 0 };
-    });
     // Old backlog expires; current overflow remains available even while sources are cooling down.
     await this.db.client.discoveryPending.deleteMany({
       where: { createdAt: { lt: new Date(Date.now() - 30 * 24 * HOUR) } },
@@ -1014,7 +817,8 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
         !targetRole(posting.title, profile.targetRoles) ||
         !seniorityFits(posting.title) ||
         !experienceFits(posting.description) ||
-        !safeUrl(posting.url)
+        forbidsAutomation(posting.description) ||
+        !autofillTarget(posting)
       ) {
         discardPosting();
         continue;
@@ -1077,67 +881,8 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
       (p) => assessMatch(profile, p.title, p.description).matchScore,
     );
     let lookups = 0;
-    let fromLinkedIn = 0,
-      linkedInOnBoard = 0;
     const created = await pool(selected, 4, async (original) => {
-      let posting = original;
-      // Alert emails give only a title, company and link: the job is looked up on
-      // the company's own board, and otherwise saved for you to open and apply.
-      const alert = original.source === "naukri" ? "Naukri" : "LinkedIn";
-      if (original.source === "linkedin" || original.source === "naukri") {
-        if (original.source === "linkedin") fromLinkedIn++;
-        const onBoard = await this.onCompanyBoard(original);
-        if (
-          onBoard &&
-          targetRole(onBoard.title, profile.targetRoles) &&
-          seniorityFits(onBoard.title)
-        ) {
-          if (original.source === "linkedin") linkedInOnBoard++;
-          posting = onBoard;
-        } else {
-          const { links, website, hiringPost, ...data } = original;
-          try {
-            await this.db.client.jobOpening.create({
-              data: {
-                ...data,
-                matchScore: null,
-                matchedSkills: [],
-                missingSkills: [],
-                matchReason: `From your ${alert} job alert. The description is not read automatically (${alert} does not allow it), so open the job to check the fit.`,
-              },
-            });
-            await this.db.client.discoveryPending.deleteMany({
-              where: { id: this.pendingId(original) },
-            });
-            return original.source;
-          } catch (e) {
-            if ((e as { code?: string }).code === "P2002")
-              await this.db.client.discoveryPending.deleteMany({
-                where: { id: this.pendingId(original) },
-              });
-            else
-              errors.push(
-                `${original.source}: could not save a job; retained in backlog for retry`,
-              );
-            return null;
-          }
-        }
-      }
-      // Search results link to the aggregator's page: prefer the same job on the
-      // company's own board, which the Form Assistant can fill.
-      if (
-        ["adzuna", "google-jobs"].includes(original.source) &&
-        !boardsIn([original.url]).length
-      ) {
-        const onBoard = await this.onCompanyBoard(original);
-        if (
-          onBoard &&
-          targetRole(onBoard.title, profile.targetRoles) &&
-          seniorityFits(onBoard.title) &&
-          this.placeAllowed(profile, onBoard.location)
-        )
-          posting = onBoard;
-      }
+      const posting = original;
       if (!experienceFits(posting.description)) {
         await this.db.client.discoveryPending.deleteMany({
           where: { id: this.pendingId(original) },
@@ -1208,13 +953,13 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
       withEmail: created.filter((c) => c === "email").length,
       limitReached: candidates.length > discoveryLimit,
       queued: await this.db.client.discoveryPending.count(),
-      naukri: { emails: naukri.emails, jobs: naukri.postings.length },
+      naukri: { emails: 0, jobs: 0 },
       linkedIn: {
-        emails: linkedIn.emails,
-        jobs: linkedIn.postings.length,
-        added: fromLinkedIn,
-        foundOnCompanyBoard: linkedInOnBoard,
-        note: linkedIn.note,
+        emails: 0,
+        jobs: 0,
+        added: 0,
+        foundOnCompanyBoard: 0,
+        note: "Disabled: discovery only scans autofill-supported company boards.",
       },
       errors,
     };
@@ -1247,7 +992,12 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
       ],
     });
     const fresh = exportEligibleJobs(
-      jobs.filter((j) => !inSheet.has(j.id) && experienceFits(j.description)),
+      jobs.filter(
+        (j) =>
+          !inSheet.has(j.id) &&
+          experienceFits(j.description) &&
+          autofillTarget(j),
+      ),
       inSheet,
     );
     const targetRows = availableSheetRows(sheetValues, fresh.length);
@@ -1988,11 +1738,20 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
         .filter((id): id is string => !!id),
     );
     const allJobs = await this.db.client.jobOpening.findMany({
-      select: { id: true, description: true },
+      select: {
+        id: true,
+        description: true,
+        source: true,
+        board: true,
+        externalId: true,
+        url: true,
+      },
       orderBy: [{ startup: "desc" }, { discoveredAt: "asc" }],
     });
     const pendingExport = exportEligibleJobs(
-      allJobs.filter((job) => experienceFits(job.description)),
+      allJobs.filter(
+        (job) => experienceFits(job.description) && autofillTarget(job),
+      ),
       inSheet,
     ).length;
     const [
@@ -2042,7 +1801,10 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
         take: 5,
       }),
       this.db.client.jobBoard.count({
-        where: { enabled: true, source: { not: "aggregator" } },
+        where: {
+          enabled: true,
+          source: { in: ["greenhouse", "lever", "ashby"] },
+        },
       }),
       this.db.client.jobApplication.count({
         where: {
@@ -2051,7 +1813,10 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
         },
       }),
       this.db.client.jobBoard.findMany({
-        where: { source: "aggregator" },
+        where: {
+          source: { in: ["greenhouse", "lever", "ashby"] },
+          enabled: true,
+        },
         select: {
           board: true,
           enabled: true,

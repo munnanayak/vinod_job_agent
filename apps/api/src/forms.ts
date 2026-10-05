@@ -1,3 +1,5 @@
+import { autofillTarget, formTarget } from "./form-target.js";
+export { formTarget } from "./form-target.js";
 import {
   BadRequestException,
   ConflictException,
@@ -17,6 +19,24 @@ export async function formJobOpen(
   request: typeof fetch = fetch,
 ): Promise<boolean> {
   const [provider, board, id] = identity.split(":");
+  if (provider === "join") {
+    const response = await request(
+      `https://join.com/companies/${encodeURIComponent(board)}/${encodeURIComponent(id)}`,
+      { signal: AbortSignal.timeout(15_000), redirect: "error" },
+    );
+    if (response.status === 404 || response.status === 410) return false;
+    if (!response.ok)
+      throw new Error(
+        `Could not check job availability (${response.status}); retry later.`,
+      );
+    const page = (await response.text())
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ");
+    return !/this job is no longer available|was archived or the deadline has passed/i.test(
+      page,
+    );
+  }
   const url =
     provider === "greenhouse"
       ? `https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs/${encodeURIComponent(id)}`
@@ -45,68 +65,6 @@ export async function formJobOpen(
   if (String(data.id) !== id)
     throw new Error("Could not check job availability; retry later.");
   return true;
-}
-
-// Job-specific binding, not just an ATS hostname. No generic site automation.
-export function formTarget(
-  value: string,
-): { identity: string; url: string; provider: string } | null {
-  try {
-    const u = new URL(value);
-    if (u.protocol !== "https:" || u.username || u.password || u.port)
-      return null;
-    const parts = u.pathname.split("/").filter(Boolean);
-    // Greenhouse's own copy of a form that companies embed on their careers site.
-    if (
-      ["boards.greenhouse.io", "job-boards.greenhouse.io"].includes(
-        u.hostname,
-      ) &&
-      u.pathname === "/embed/job_app"
-    ) {
-      const board = u.searchParams.get("for") ?? "",
-        token = u.searchParams.get("token") ?? "";
-      if (/^[a-z0-9_-]+$/i.test(board) && /^\d+$/.test(token))
-        return {
-          provider: "Greenhouse",
-          identity: `greenhouse:${board.toLowerCase()}:${token}`,
-          url: `https://job-boards.greenhouse.io/embed/job_app?for=${board.toLowerCase()}&token=${token}`,
-        };
-      return null;
-    }
-    if (
-      ["boards.greenhouse.io", "job-boards.greenhouse.io"].includes(
-        u.hostname,
-      ) &&
-      parts.length === 3 &&
-      parts[1] === "jobs" &&
-      /^[a-z0-9_-]+$/i.test(parts[0]) &&
-      /^\d+$/.test(parts[2])
-    ) {
-      return {
-        provider: "Greenhouse",
-        identity: `greenhouse:${parts[0].toLowerCase()}:${parts[2]}`,
-        url: `https://job-boards.greenhouse.io/embed/job_app?for=${parts[0].toLowerCase()}&token=${parts[2]}`,
-      };
-    }
-    if (
-      ["jobs.lever.co", "jobs.eu.lever.co", "jobs.ashbyhq.com"].includes(
-        u.hostname,
-      ) &&
-      parts.length >= 2 &&
-      parts.length <= 3 &&
-      /^[a-z0-9._-]+$/i.test(parts[0]) &&
-      /^[a-z0-9-]{8,}$/i.test(parts[1]) &&
-      (!parts[2] || ["apply", "application"].includes(parts[2]))
-    ) {
-      const provider = u.hostname === "jobs.ashbyhq.com" ? "Ashby" : "Lever";
-      return {
-        provider,
-        identity: `${u.hostname}:${parts[0].toLowerCase()}:${parts[1]}`,
-        url: `https://${u.hostname}/${parts[0]}/${parts[1]}/${provider === "Lever" ? "apply" : "application"}`,
-      };
-    }
-  } catch {}
-  return null;
 }
 
 // A question with the company's name taken out, so "Have you worked at GitLab?"
@@ -177,6 +135,8 @@ export class FormSessions {
       throw new BadRequestException("Preparation expired or was already used.");
     const u = new URL(pageUrl);
     const [provider, board, id] = entry.identity.split(":");
+    if (provider === "join" && formTarget(pageUrl)?.identity === entry.identity)
+      return this.consume(code, pageUrl, now);
     if (
       provider !== "greenhouse" ||
       u.protocol !== "https:" ||
@@ -244,20 +204,14 @@ export class FormAssistant {
     });
   }
   private target(data: Reviewed) {
-    // Greenhouse jobs listed on a company's own site open Greenhouse's copy of the same form.
-    const { source, board, externalId, url } = data.job;
-    return formTarget(
-      source === "greenhouse" && board && /^\d+$/.test(externalId)
-        ? `https://job-boards.greenhouse.io/${board}/jobs/${externalId}`
-        : url,
-    );
+    return autofillTarget(data.job);
   }
   async prepare(jobId: string) {
     const data = await this.workflow.reviewedFormJob(jobId);
     const target = this.target(data);
     if (!target)
       throw new PreconditionFailedException(
-        `${data.job.company} · ${data.job.title}: This job links to a site the Form Assistant cannot fill. It supports Greenhouse, Lever and Ashby application URLs. Use Email your CV if a confirmed hiring email is available, or open the job link and apply manually.`,
+        `${data.job.company} · ${data.job.title}: This job links to a site the Form Assistant cannot fill. It supports Greenhouse, Lever, Ashby and JOIN application URLs. Use Email your CV if a confirmed hiring email is available, or open the job link and apply manually.`,
       );
     const session = this.sessions.issue(
       jobId,
@@ -432,6 +386,20 @@ export class FormAssistant {
       questions,
       await this.bank(),
     );
+  }
+  async draft(reportToken: string, questions: string[]) {
+    const report = this.reports.get(reportToken);
+    if (!report || report.expires <= Date.now())
+      throw new BadRequestException("This form session expired.");
+    const data = await this.workflow.reviewedFormJob(report.jobId);
+    return {
+      answers: await draftAnswers(
+        data.profile,
+        { ...data.job, appliedBefore: await this.appliedTo(data.job.company) },
+        questions,
+        await this.bank(),
+      ),
+    };
   }
   // Whether an application to this company is already recorded here.
   private async appliedTo(company: string) {

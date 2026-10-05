@@ -29,3 +29,11 @@ VITE_API_BASE_URL=https://vinod-job-agent.onrender.com
 The extension already targets this production API. Reload the unpacked extension after changing its files. Form preparation and report tokens are held in API memory, so restarting the API requires preparing forms again; keep one API instance until these sessions are persisted in the database.
 
 Validation commands: `pnpm build` and `pnpm test`. A batch request prepares applications; it does not submit them. Do not use publish endpoints for deployment smoke tests.
+
+## Supported discovery and JOIN navigation
+
+Discovery now scans Greenhouse, Lever and Ashby boards, plus employer-written Hacker News posts that contain a direct supported application link. LinkedIn/Naukri mailbox discovery and the other aggregators are no longer called. Unsupported backlog entries are discarded during the next discovery run; existing jobs, applications and sheet rows are preserved. New exports exclude unsupported applications.
+
+Form Assistant 0.18.0 adds JOIN. Reload the unpacked extension after updating. It recognizes the approved listing, skips archived roles, navigates matching Apply/Next steps, fills profile/CV fields and requests drafted answers for each form step. Sign-in, passwords, OTP and CAPTCHA require user input. Automatic submission, when enabled on the dashboard, waits ten seconds and is blocked while required fields or a detected CAPTCHA remain.
+
+JOIN state stays in extension session storage for the same tab. A spontaneous application requires its own approval; a closed numbered role never falls back to it. For numbered roles, application routes must retain a matching `jobId` query parameter. If JOIN drops that identity, the extension pauses for manual continuation. Arbitrary websites and new OAuth tabs are not automated by this adapter. Live authenticated JOIN submission has not been exercised by the test suite.

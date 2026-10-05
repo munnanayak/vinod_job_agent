@@ -142,7 +142,7 @@ app.enableCors(
   ) => {
     const origin = req.headers.origin ?? "";
     const extensionClaim =
-      /^\/api\/workflow\/forms\/(claim|closed|submitted|skip|answers|options)$/.test(
+      /^\/api\/workflow\/forms\/(claim|closed|submitted|skip|answers|options|draft)$/.test(
         req.url,
       ) && /^chrome-extension:\/\/[a-p]{32}$/.test(origin);
     const allow = extensionClaim || allowOrigin(origin);
@@ -188,7 +188,7 @@ app.use(
     if (!hosts.has(req.headers.host ?? ""))
       return res.status(403).json({ message: "Unrecognized host" });
     const extensionClaim =
-      /^\/api\/workflow\/forms\/(claim|closed|submitted|skip|answers|options)$/.test(
+      /^\/api\/workflow\/forms\/(claim|closed|submitted|skip|answers|options|draft)$/.test(
         req.url,
       ) &&
       req.method === "POST" &&

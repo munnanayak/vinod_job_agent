@@ -10,6 +10,34 @@ function fillApplication(packet, mode = "fill") {
         return null;
       const p = u.pathname.split("/").filter(Boolean);
       if (
+        u.hostname === "join.com" &&
+        p[0] === "companies" &&
+        /^[a-z0-9_-]+$/i.test(p[1] ?? "")
+      ) {
+        if (
+          p.length === 3 &&
+          (/^\d+-[a-z0-9-]+$/i.test(p[2]) || p[2] === "spontaneous-application")
+        )
+          return `join:${p[1].toLowerCase()}:${p[2]}`;
+        // The company-level authentication flow is only bound to an explicitly
+        // approved spontaneous application, never an archived numbered role.
+        if (
+          p[2] === "apply" &&
+          p.length <= 4 &&
+          packet.identity ===
+            `join:${p[1].toLowerCase()}:spontaneous-application`
+        )
+          return packet.identity;
+        if (
+          p[2] === "apply" &&
+          p.length <= 4 &&
+          packet.identity?.startsWith(`join:${p[1].toLowerCase()}:`) &&
+          u.searchParams.get("jobId") ===
+            packet.identity.split(":")[2].split("-")[0]
+        )
+          return packet.identity;
+      }
+      if (
         ["boards.greenhouse.io", "job-boards.greenhouse.io"].includes(
           u.hostname,
         ) &&

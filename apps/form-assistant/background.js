@@ -1,8 +1,45 @@
 // Only this extension's service worker talks to the Job Agent API.
+importScripts("join-flow.js");
 const API = "https://vinod-job-agent.onrender.com/api/workflow/forms";
 
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   const call = async () => {
+    if (["join-save", "join-load", "join-clear"].includes(message.type)) {
+      const pageUrl = sender.url ?? sender.tab?.url;
+      if (
+        !sender.tab?.id ||
+        !pageUrl ||
+        new URL(pageUrl).origin !== "https://join.com"
+      )
+        throw new Error("Invalid JOIN tab.");
+      const key = `join-session-${sender.tab.id}`;
+      if (message.type === "join-clear") {
+        await chrome.storage.session.remove(key);
+        return {};
+      }
+      if (message.type === "join-save") {
+        if (
+          !/^[a-f0-9]{64}$/.test(message.packet?.reportToken ?? "") ||
+          !joinPageMatches(message.packet.identity, pageUrl)
+        )
+          throw new Error("Wrong JOIN application.");
+        await chrome.storage.session.set({
+          [key]: {
+            ...message.packet,
+            auto: message.auto === true,
+            expires: Math.min(
+              message.packet.expires || Date.now() + 3 * 3_600_000,
+              Date.now() + 3 * 3_600_000,
+            ),
+          },
+        });
+        return {};
+      }
+      const entry = (await chrome.storage.session.get(key))[key];
+      if (!entry || entry.expires <= Date.now()) return null;
+      if (!joinPageMatches(entry.identity, pageUrl)) return { blocked: true };
+      return entry;
+    }
     if (!/^[a-f0-9]{64}$/.test(message.token ?? ""))
       throw new Error("Invalid form code.");
     const path = [
@@ -12,6 +49,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       "skip",
       "answers",
       "options",
+      "draft",
     ].includes(message.type)
       ? message.type
       : null;
@@ -31,7 +69,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
             }
           : path === "answers"
             ? { answers: message.answers ?? [] }
-            : path === "options"
+            : path === "options" || path === "draft"
               ? { questions: message.questions ?? [] }
               : {},
       ),
@@ -49,4 +87,7 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     (e) => reply({ ok: false, error: e.message }),
   );
   return true;
+});
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void chrome.storage.session.remove(`join-session-${tabId}`);
 });
