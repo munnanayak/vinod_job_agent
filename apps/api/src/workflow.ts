@@ -1858,8 +1858,8 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
     return { job, profile, resume };
   }
 
-  /** Approved, unchanged sheet rows whose job has a Greenhouse/Lever/Ashby form and no application yet. */
-  async approvedFormJobIds() {
+  /** Queue approved jobs from any discovery source; report every excluded row. */
+  async approvedFormJobIds(excluded?: (jobId: string, reason: string) => void) {
     const sheet = this.formReviewRows(await this.google.readSheet());
     const approvedIds = [...sheet]
       .filter(([, row]) => approved(row))
@@ -1867,12 +1867,8 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
     const jobs = await this.db.client.jobOpening.findMany({
       where: {
         id: { in: approvedIds },
-        source: { in: ["greenhouse", "lever", "ashby"] },
-        OR: [
-          { application: null },
-          { application: { status: "MANUAL_ACTION_REQUIRED" } },
-        ],
       },
+      include: { application: true },
       orderBy: [{ startup: "desc" }, { matchScore: "desc" }],
     });
     // The same role posted for several cities is one application, not several.
@@ -1883,15 +1879,29 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
     const role = (j: { company: string; title: string }) =>
       `${j.company.trim().toLowerCase()}|${j.title.trim().toLowerCase()}`;
     const taken = new Set(done.map((a) => role(a.job)));
+    const known = new Set(jobs.map((job) => job.id));
+    for (const id of approvedIds)
+      if (!known.has(id))
+        excluded?.(
+          id,
+          "This Job ID is not in the database. Export the job again before approving it.",
+        );
     return jobs
-      .filter(
-        (job) =>
-          experienceFits(job.description) &&
-          unchanged(sheet.get(job.id)!, rowFor(job)),
-      )
       .filter((job) => {
-        if (taken.has(role(job))) return false;
-        taken.add(role(job));
+        const reason =
+          job.application && job.application.status !== "MANUAL_ACTION_REQUIRED"
+            ? `An application is already recorded (${statusLabel(job.application.status)}).`
+            : !unchanged(sheet.get(job.id)!, rowFor(job))
+              ? "Protected sheet columns were changed. Restore the original job details and approve again."
+              : !experienceFits(job.description)
+                ? `This job requires more than ${maxJobExperience()} years of experience.`
+                : taken.has(role(job))
+                  ? "The same company and role has already been applied to."
+                  : "";
+        if (reason) {
+          excluded?.(job.id, `${job.company} · ${job.title}: ${reason}`);
+          return false;
+        }
         return true;
       })
       .map((job) => job.id);

@@ -479,6 +479,52 @@ test("unidentified sheet rows cannot authorize forms or break valid form approva
   );
 });
 
+test("approved aggregator jobs with supported URLs enter the form queue", async () => {
+  const f = fakeWorkflow();
+  f.jobs[0].source = "google-jobs";
+  f.rows[1][19] = "google-jobs:acme";
+  let query;
+  f.workflow.db.client.jobOpening.findMany = async (input) => {
+    query = input;
+    return f.jobs;
+  };
+  f.workflow.db.client.jobApplication.findMany = async () => [];
+  assert.deepEqual(await f.workflow.approvedFormJobIds(), ["job0"]);
+  assert.equal(query.where.source, undefined);
+  assert.equal(
+    (await new FormAssistant(f.workflow).prepare("job0")).provider,
+    "Lever",
+  );
+});
+
+test("approved unsupported links show application alternatives rather than no approvals", async () => {
+  const f = fakeWorkflow();
+  f.jobs[0].source = "hackernews";
+  f.jobs[0].url = "https://news.ycombinator.com/item?id=123";
+  f.rows[1][6] = f.jobs[0].url;
+  f.rows[1][19] = "hackernews:acme";
+  f.workflow.db.client.jobApplication.findMany = async () => [];
+  const result = await new FormAssistant(f.workflow).batch(1, true);
+  assert.equal(result.ready.length, 0);
+  assert.equal(result.skipped.length, 1);
+  assert.match(result.skipped[0].reason, /Acme/);
+  assert.match(result.skipped[0].reason, /Email your CV/);
+  assert.equal(result.remaining, 0);
+});
+
+test("previous applications and edited approvals explain why they are excluded", async () => {
+  const f = fakeWorkflow(2);
+  f.jobs[0].application = { status: "SENT" };
+  f.rows[2][3] = "Edited title";
+  f.workflow.db.client.jobApplication.findMany = async () => [];
+  const result = await new FormAssistant(f.workflow).batch(1, true);
+  assert.equal(result.ready.length, 0);
+  assert.equal(result.skipped.length, 2);
+  assert.match(result.skipped[0].reason, /already recorded/);
+  assert.match(result.skipped[1].reason, /Protected sheet columns/);
+  assert.equal(result.remaining, 0);
+});
+
 test("a clicked application queue stops after ten submissions and needs another click", async () => {
   const submitted = [];
   const service = new FormAssistant({

@@ -257,7 +257,7 @@ export class FormAssistant {
     const target = this.target(data);
     if (!target)
       throw new PreconditionFailedException(
-        "This URL is not a supported Greenhouse, Lever or Ashby application page. Open it manually and use your profile and CV.",
+        `${data.job.company} · ${data.job.title}: This job links to a site the Form Assistant cannot fill. It supports Greenhouse, Lever and Ashby application URLs. Use Email your CV if a confirmed hiring email is available, or open the job link and apply manually.`,
       );
     const session = this.sessions.issue(
       jobId,
@@ -297,16 +297,36 @@ export class FormAssistant {
       this.appliedThisSession = 0;
       this.applying = true;
     }
-    const ids = (await this.workflow.approvedFormJobIds()).filter(
-      (id) => !this.passed.has(id),
-    );
-    const ready: Awaited<ReturnType<FormAssistant["prepare"]>>[] = [];
     const skipped: { jobId: string; reason: string }[] = [];
+    const ids = (
+      await this.workflow.approvedFormJobIds((jobId, reason) =>
+        skipped.push({ jobId, reason }),
+      )
+    ).filter((id) => !this.passed.has(id));
+    const ready: Awaited<ReturnType<FormAssistant["prepare"]>>[] = [];
+    const excludedCount = skipped.length;
     for (const id of ids) {
       if (ready.length >= limit) break;
       let prepared: Awaited<ReturnType<FormAssistant["prepare"]>> | undefined;
       try {
         prepared = await this.prepare(id);
+        if (
+          ready.some(
+            (job) =>
+              job.company.trim().toLowerCase() ===
+                prepared!.company.trim().toLowerCase() &&
+              job.title.trim().toLowerCase() ===
+                prepared!.title.trim().toLowerCase(),
+          )
+        ) {
+          this.sessions.discard(prepared.code);
+          skipped.push({
+            jobId: id,
+            reason:
+              "The same company and role is already queued in this batch.",
+          });
+          continue;
+        }
         const target = formTarget(prepared.url)!;
         if (!(await formJobOpen(target.identity))) {
           this.sessions.discard(prepared.code);
@@ -323,7 +343,10 @@ export class FormAssistant {
     return {
       ready,
       skipped,
-      remaining: Math.max(0, ids.length - ready.length - skipped.length),
+      remaining: Math.max(
+        0,
+        ids.length - ready.length - (skipped.length - excludedCount),
+      ),
     };
   }
   async claim(code: string, pageUrl: string, questions: string[] = []) {

@@ -329,7 +329,7 @@ export function Workflow() {
           tab.close();
           return r.skipped.length
             ? `None of your approved jobs could be prepared: ${r.skipped[0].reason}`
-            : "No approved jobs with a supported application form. Approve Greenhouse, Lever or Ashby jobs in your sheet first.";
+            : "No approved applications are ready in the configured Jobs tab. Check that the Review column says APPROVED and each row has its original Job ID. Form filling supports Greenhouse, Lever and Ashby URLs; other jobs need a confirmed hiring email or a manual application.";
         }
         tab.opener = null;
         tab.location.href = first.openUrl + (autoSubmit ? "&auto=1" : "");
