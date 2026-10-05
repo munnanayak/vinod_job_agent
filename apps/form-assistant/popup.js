@@ -25,7 +25,7 @@ button.addEventListener("click", async () => {
       args: [{}, "inspect"],
     });
     const response = await fetch(
-      "http://127.0.0.1:3000/api/workflow/forms/claim",
+      "https://vinod-job-agent.onrender.com/api/workflow/forms/claim",
       {
         method: "POST",
         headers: {

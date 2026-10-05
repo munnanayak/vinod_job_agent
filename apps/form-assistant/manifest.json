@@ -1,11 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "Job Agent — Form Assistant",
-  "version": "0.16.0",
+  "name": "Job Agent \u2014 Form Assistant",
+  "version": "0.17.0",
   "description": "Fills approved job applications opened from your Job Agent dashboard. You review and submit.",
   "permissions": ["activeTab", "scripting"],
-  "host_permissions": ["http://127.0.0.1/*"],
-  "background": { "service_worker": "background.js" },
+  "host_permissions": ["https://vinod-job-agent.onrender.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": [

@@ -1,5 +1,5 @@
-// Only this extension's service worker talks to the local Job Agent API.
-const API = "http://127.0.0.1:3000/api/workflow/forms";
+// Only this extension's service worker talks to the Job Agent API.
+const API = "https://vinod-job-agent.onrender.com/api/workflow/forms";
 
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   const call = async () => {
