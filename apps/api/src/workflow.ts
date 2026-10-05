@@ -1225,9 +1225,8 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
     const needsHeader =
       !values.length || values[0].every((cell) => !cell.trim());
     if (needsHeader) await this.google.writeRange("A1:T1", [HEADERS]);
-    const { ids: inSheet, rowsWithoutId } = exportSheetRows(
-      needsHeader ? [HEADERS] : values,
-    );
+    const sheetValues = needsHeader ? [HEADERS, ...values.slice(1)] : values;
+    const { ids: inSheet, rowsWithoutId } = exportSheetRows(sheetValues);
     // Jobs applied to before the Review column showed it are brought up to date.
     const done = await this.db.client.jobApplication.findMany({
       where: { status: { in: ["SENT", "REPLIED", "APPLIED_MANUALLY"] } },
@@ -1251,10 +1250,7 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
       jobs.filter((j) => !inSheet.has(j.id) && experienceFits(j.description)),
       inSheet,
     );
-    const targetRows = availableSheetRows(
-      needsHeader ? [HEADERS] : values,
-      fresh.length,
-    );
+    const targetRows = availableSheetRows(sheetValues, fresh.length);
     const exportRows = fresh.map((job) =>
       rowFor(
         job,

@@ -132,6 +132,9 @@ export class FormSessions {
     string,
     { jobId: string; fingerprint: string; identity: string; expires: number }
   >();
+  discard(code: string) {
+    this.entries.delete(code);
+  }
   issue(
     jobId: string,
     fingerprint: string,
@@ -301,16 +304,19 @@ export class FormAssistant {
     const skipped: { jobId: string; reason: string }[] = [];
     for (const id of ids) {
       if (ready.length >= limit) break;
+      let prepared: Awaited<ReturnType<FormAssistant["prepare"]>> | undefined;
       try {
-        const prepared = await this.prepare(id);
+        prepared = await this.prepare(id);
         const target = formTarget(prepared.url)!;
         if (!(await formJobOpen(target.identity))) {
+          this.sessions.discard(prepared.code);
           this.passed.add(id);
           skipped.push({ jobId: id, reason: "This job is no longer open." });
           continue;
         }
         ready.push(prepared);
       } catch (e) {
+        if (prepared) this.sessions.discard(prepared.code);
         skipped.push({ jobId: id, reason: (e as Error).message });
       }
     }

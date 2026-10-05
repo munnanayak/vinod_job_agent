@@ -535,6 +535,53 @@ test("email previews cap each manually published batch at ten jobs", async () =>
   assert.equal(f.sent.length, 0);
 });
 
+test("restoring a blank sheet header preserves existing jobs and exports without duplicates", async () => {
+  const f = fakeWorkflow(2);
+  f.rows.pop();
+  f.rows[0] = [];
+  const existing = [...f.rows[1]];
+  const writes = [];
+  f.google.writeRange = async (range, values) => {
+    if (range === "A1:T1") f.rows[0] = values[0];
+  };
+  f.google.writeRows = async (rows) => {
+    for (const entry of rows) {
+      writes.push(entry);
+      f.rows[entry.row - 1] = entry.values;
+    }
+  };
+  f.workflow.db.client.jobApplication.findMany = async () => [];
+  f.workflow.db.client.jobOpening.updateMany = async () => ({ count: 1 });
+  assert.equal((await f.workflow.export()).exported, 1);
+  assert.equal(writes[0].row, 3);
+  assert.deepEqual(f.rows[1], existing);
+  assert.equal(f.rows[2][0], "job1");
+  assert.equal((await f.workflow.export()).exported, 0);
+  assert.equal(writes.length, 1);
+  assert.equal(f.sent.length, 0);
+});
+
+test("closed listings release preparation slots before the next open job", async () => {
+  const f = fakeWorkflow(105);
+  const service = new FormAssistant(f.workflow);
+  f.workflow.approvedFormJobIds = async () => f.jobs.map((j) => j.id);
+  const original = globalThis.fetch;
+  globalThis.fetch = async (requestUrl) => {
+    const id = new URL(requestUrl).pathname.split("/").at(-1);
+    return String(requestUrl).includes("12345782-")
+      ? new Response(JSON.stringify({ id }))
+      : new Response("{}", { status: 404 });
+  };
+  try {
+    const batch = await service.batch(1, true);
+    assert.equal(batch.skipped.length, 104);
+    assert.equal(batch.ready[0].jobId, "job104");
+    assert.equal(service.sessions.entries.size, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("startup recovers interrupted discovery only while owning the shared lock", async () => {
   const old = process.env.SCHEDULER_ENABLED;
   process.env.SCHEDULER_ENABLED = "false";

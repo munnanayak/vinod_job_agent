@@ -12,7 +12,6 @@ import {
   Put,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import type { OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { ApiErrors } from "./api-errors.js";
 import { Database } from "./database.js";
@@ -135,26 +134,6 @@ const allowOrigin = (origin: string) => {
     return false;
   }
 };
-const allowedOrigins = new Set(
-  [
-    process.env.APP_URL,
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    ...(process.env.CORS_ALLOWED_ORIGINS ?? "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
-    ...(process.env.RENDER_EXTERNAL_HOSTNAME
-      ? [`https://${process.env.RENDER_EXTERNAL_HOSTNAME}`]
-      : []),
-    ...(process.env.API_PUBLIC_URL
-      ? [new URL(process.env.API_PUBLIC_URL).origin]
-      : []),
-    ...(process.env.FRONTEND_URL
-      ? [new URL(process.env.FRONTEND_URL).origin]
-      : []),
-  ].filter(Boolean) as string[],
-);
 app.setGlobalPrefix("api");
 app.enableCors(
   (

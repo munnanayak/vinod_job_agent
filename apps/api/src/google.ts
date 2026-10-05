@@ -310,14 +310,6 @@ export class GoogleIntegration {
     );
   }
 
-  async appendRows(values: string[][]) {
-    await this.json(
-      `${this.sheetBase()}/${this.range("A:T")}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
-      undefined,
-      { method: "POST", body: JSON.stringify({ values }) },
-    );
-  }
-
   async writeRows(rows: { row: number; values: string[] }[]) {
     if (!rows.length) return;
     await this.json(`${this.sheetBase()}:batchUpdate`, undefined, {
