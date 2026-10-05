@@ -98,29 +98,48 @@ class ProfileController {
 class AppModule {}
 const app = await NestFactory.create(AppModule);
 const port = Number(process.env.PORT ?? process.env.API_PORT ?? 3000);
+const allowedOrigins = new Set(
+  [
+    process.env.APP_URL,
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    ...(process.env.CORS_ALLOWED_ORIGINS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    ...(process.env.RENDER_EXTERNAL_HOSTNAME
+      ? [`https://${process.env.RENDER_EXTERNAL_HOSTNAME}`]
+      : []),
+    ...(process.env.API_PUBLIC_URL ? [new URL(process.env.API_PUBLIC_URL).origin] : []),
+    ...(process.env.FRONTEND_URL ? [new URL(process.env.FRONTEND_URL).origin] : []),
+  ].filter(Boolean) as string[],
+);
 app.setGlobalPrefix("api");
 app.enableCors(
   (
     req: { url: string; headers: Record<string, string | undefined> },
     callback: (error: Error | null, options: object) => void,
   ) => {
+    const origin = req.headers.origin ?? "";
     const extensionClaim =
       /^\/api\/workflow\/forms\/(claim|closed|submitted|skip|answers|options)$/.test(
         req.url,
-      ) && /^chrome-extension:\/\/[a-p]{32}$/.test(req.headers.origin ?? "");
+      ) && /^chrome-extension:\/\/[a-p]{32}$/.test(origin);
+    const allow = extensionClaim || allowedOrigins.has(origin);
     callback(null, {
-      origin: extensionClaim
-        ? req.headers.origin
-        : [
-            process.env.APP_URL ?? "http://localhost:5173",
-            "http://127.0.0.1:5173",
-          ],
-      methods: ["GET", "PUT", "POST"],
-      allowedHeaders: ["Content-Type", "X-Job-Agent", "X-Job-Agent-Form-Token"],
+      origin: allow ? origin || true : false,
+      methods: ["GET", "PUT", "POST", "OPTIONS"],
+      allowedHeaders: [
+        "Content-Type",
+        "X-Job-Agent",
+        "X-Job-Agent-Form-Token",
+        "Authorization",
+      ],
+      credentials: true,
     });
   },
 );
-// Require a custom header for mutations, and accept only local frontend origins.
+// Require a custom header for mutations, and accept only trusted frontend origins.
 // This blocks cross-site forms/fetches from triggering local publication.
 app.use(
   (
@@ -132,10 +151,7 @@ app.use(
     res: { status: (n: number) => { json: (v: unknown) => void } },
     next: () => void,
   ) => {
-    const origins = new Set([
-      process.env.APP_URL ?? "http://localhost:5173",
-      "http://127.0.0.1:5173",
-    ]);
+    const origins = new Set(allowedOrigins);
     const hosts = new Set([
       `localhost:${port}`,
       `127.0.0.1:${port}`,
@@ -144,6 +160,9 @@ app.use(
         : []),
       ...(process.env.API_PUBLIC_URL
         ? [new URL(process.env.API_PUBLIC_URL).host]
+        : []),
+      ...(process.env.FRONTEND_URL
+        ? [new URL(process.env.FRONTEND_URL).host]
         : []),
     ]);
     if (!hosts.has(req.headers.host ?? ""))
