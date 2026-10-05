@@ -310,23 +310,6 @@ export class FormAssistant {
       let prepared: Awaited<ReturnType<FormAssistant["prepare"]>> | undefined;
       try {
         prepared = await this.prepare(id);
-        if (
-          ready.some(
-            (job) =>
-              job.company.trim().toLowerCase() ===
-                prepared!.company.trim().toLowerCase() &&
-              job.title.trim().toLowerCase() ===
-                prepared!.title.trim().toLowerCase(),
-          )
-        ) {
-          this.sessions.discard(prepared.code);
-          skipped.push({
-            jobId: id,
-            reason:
-              "The same company and role is already queued in this batch.",
-          });
-          continue;
-        }
         const target = formTarget(prepared.url)!;
         if (!(await formJobOpen(target.identity))) {
           this.sessions.discard(prepared.code);
@@ -337,6 +320,7 @@ export class FormAssistant {
         ready.push(prepared);
       } catch (e) {
         if (prepared) this.sessions.discard(prepared.code);
+        this.passed.add(id);
         skipped.push({ jobId: id, reason: (e as Error).message });
       }
     }

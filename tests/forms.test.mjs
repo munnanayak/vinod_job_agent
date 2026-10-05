@@ -497,6 +497,62 @@ test("approved aggregator jobs with supported URLs enter the form queue", async 
   );
 });
 
+test("form queue follows sheet order and allows distinct jobs at the same company", async () => {
+  const f = fakeWorkflow(3);
+  f.rows.splice(1, 3, f.rows[3], f.rows[1], f.rows[2]);
+  f.workflow.db.client.jobOpening.findMany = async () => [...f.jobs].reverse();
+  f.workflow.db.client.jobApplication.findMany = async () => [
+    { job: f.jobs[0] },
+  ];
+  assert.deepEqual(await f.workflow.approvedFormJobIds(), [
+    "job2",
+    "job0",
+    "job1",
+  ]);
+  const original = globalThis.fetch;
+  globalThis.fetch = async (requestUrl) =>
+    new Response(
+      JSON.stringify({ id: new URL(requestUrl).pathname.split("/").at(-1) }),
+    );
+  try {
+    const result = await new FormAssistant(f.workflow).batch(3, true);
+    assert.deepEqual(
+      result.ready.map((job) => job.jobId),
+      ["job2", "job0", "job1"],
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("failed preparations are skipped for the current loop and retried on another click", async () => {
+  const service = new FormAssistant({
+    approvedFormJobIds: async () => ["bad", "open"],
+  });
+  let attempts = 0;
+  service.prepare = async (id) => {
+    if (id === "bad") {
+      attempts++;
+      throw Error("Unavailable application");
+    }
+    return { jobId: id, url };
+  };
+  const original = globalThis.fetch;
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({ id: "12345678-aaaa-bbbb-cccc-123456789012" }),
+    );
+  try {
+    assert.equal((await service.batch(1, true)).ready[0].jobId, "open");
+    await service.batch(1);
+    assert.equal(attempts, 1);
+    await service.batch(1, true);
+    assert.equal(attempts, 2);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("approved unsupported links show application alternatives rather than no approvals", async () => {
   const f = fakeWorkflow();
   f.jobs[0].source = "hackernews";

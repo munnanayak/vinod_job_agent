@@ -1871,14 +1871,6 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
       include: { application: true },
       orderBy: [{ startup: "desc" }, { matchScore: "desc" }],
     });
-    // The same role posted for several cities is one application, not several.
-    const done = await this.db.client.jobApplication.findMany({
-      where: { status: { in: ["SENT", "REPLIED", "APPLIED_MANUALLY"] } },
-      select: { job: { select: { company: true, title: true } } },
-    });
-    const role = (j: { company: string; title: string }) =>
-      `${j.company.trim().toLowerCase()}|${j.title.trim().toLowerCase()}`;
-    const taken = new Set(done.map((a) => role(a.job)));
     const known = new Set(jobs.map((job) => job.id));
     for (const id of approvedIds)
       if (!known.has(id))
@@ -1886,7 +1878,9 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
           id,
           "This Job ID is not in the database. Export the job again before approving it.",
         );
+    const position = new Map(approvedIds.map((id, index) => [id, index]));
     return jobs
+      .sort((a, b) => position.get(a.id)! - position.get(b.id)!)
       .filter((job) => {
         const reason =
           job.application && job.application.status !== "MANUAL_ACTION_REQUIRED"
@@ -1895,9 +1889,7 @@ export class JobWorkflow implements OnModuleInit, OnModuleDestroy {
               ? "Protected sheet columns were changed. Restore the original job details and approve again."
               : !experienceFits(job.description)
                 ? `This job requires more than ${maxJobExperience()} years of experience.`
-                : taken.has(role(job))
-                  ? "The same company and role has already been applied to."
-                  : "";
+                : "";
         if (reason) {
           excluded?.(job.id, `${job.company} · ${job.title}: ${reason}`);
           return false;

@@ -579,7 +579,9 @@ export function Workflow() {
                   After each application is submitted, the next job opens in
                   that same tab by itself and is recorded here. The agent stops
                   after 10 applications; click Apply next 10 again for the next
-                  batch. Applying starts only when you click this button.
+                  batch. Applying starts only when you click this button. Jobs
+                  follow their approved order in the sheet. Unavailable or
+                  unsupported forms are skipped and the next job is checked.
                 </p>
                 <label className="checkbox">
                   <input
