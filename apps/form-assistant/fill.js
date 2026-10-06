@@ -10,6 +10,11 @@ function fillApplication(packet, mode = "fill") {
         return null;
       const p = u.pathname.split("/").filter(Boolean);
       if (
+        ["linkedin.com", "www.linkedin.com"].includes(u.hostname) &&
+        /^\/jobs\/view\/\d+\/?$/.test(u.pathname)
+      )
+        return `linkedin:jobs:${p[2]}`;
+      if (
         u.hostname === "join.com" &&
         p[0] === "companies" &&
         /^[a-z0-9_-]+$/i.test(p[1] ?? "")
@@ -78,6 +83,14 @@ function fillApplication(packet, mode = "fill") {
     throw new Error(
       "Wrong or unsupported application page. Open the exact dashboard link.",
     );
+
+  // LinkedIn is a full social page: only the active application modal is eligible.
+  const root = current.startsWith("linkedin:")
+    ? document.querySelector(
+        '.jobs-easy-apply-modal[role="dialog"], [role="dialog"] .jobs-easy-apply-content',
+      )
+    : document;
+  if (!root) throw new Error("Open this job's Easy Apply modal first.");
 
   // The question text for a field: its own label, else the nearest label-like
   // element in an ancestor that doesn't also contain the field.
@@ -151,7 +164,7 @@ function fillApplication(packet, mode = "fill") {
     visible(el) ||
     [...(el.labels ?? [])].some(visible) ||
     visible(el.parentElement ?? el);
-  const available = [...document.querySelectorAll("input,textarea")].filter(
+  const available = [...root.querySelectorAll("input,textarea")].filter(
     (el) =>
       !el.disabled &&
       !el.readOnly &&
@@ -160,7 +173,11 @@ function fillApplication(packet, mode = "fill") {
         ? fileVisible(el)
         : visible(el)),
   );
-  if (!available.length)
+  if (
+    !available.length &&
+    !root.querySelectorAll("select").length &&
+    !["questions", "unanswered", "snapshot"].includes(mode)
+  )
     throw new Error(
       "No accessible form fields found yet. Open the site's application form first; embedded forms need manual entry.",
     );
@@ -177,7 +194,7 @@ function fillApplication(packet, mode = "fill") {
       "",
     ].includes(el.type) || el.tagName === "TEXTAREA";
 
-  const selects = [...document.querySelectorAll("select")].filter(
+  const selects = [...root.querySelectorAll("select")].filter(
     (el) => !el.disabled && visible(el),
   );
   const isChoice = (el) => el.type === "radio" || el.type === "checkbox";
@@ -188,7 +205,7 @@ function fillApplication(packet, mode = "fill") {
     /(^|[\s_-])(active|selected|checked)([\s_-]|$)/i.test(b.className);
   const toggles = (() => {
     const groups = new Map();
-    for (const b of document.querySelectorAll("button")) {
+    for (const b of root.querySelectorAll("button")) {
       const text = b.textContent.trim();
       if (b.disabled || !visible(b) || !text || text.length > 30) continue;
       groups.set(b.parentElement, [...(groups.get(b.parentElement) ?? []), b]);
@@ -277,19 +294,19 @@ function fillApplication(packet, mode = "fill") {
     );
   // Required questions that still have no answer.
   const unanswered = () =>
-    [...document.querySelectorAll("input,textarea,select")]
+    [...root.querySelectorAll("input,textarea,select")]
       .filter(
         (el) =>
           visible(el) &&
           !el.disabled &&
           (el.required || el.getAttribute("aria-required") === "true") &&
           (el.type === "radio" && el.name
-            ? !document.querySelector(
+            ? !root.querySelector(
                 `input[type="radio"][name="${CSS.escape(el.name)}"]:checked`,
               )
             : el.type === "checkbox" && el.name
               ? // A "select all that apply" group is answered once any box is ticked.
-                !document.querySelector(
+                !root.querySelector(
                   `input[type="checkbox"][name="${CSS.escape(el.name)}"]:checked`,
                 )
               : el.type === "checkbox" || el.type === "radio"
@@ -479,6 +496,12 @@ function fillApplication(packet, mode = "fill") {
       )
         throw new Error("Invalid resume attachment.");
       const bytes = Uint8Array.from(atob(r.base64), (c) => c.charCodeAt(0));
+      if (current.startsWith("linkedin:") && bytes.length >= 2 * 1024 * 1024) {
+        result.skipped.push(
+          "LinkedIn needs a resume smaller than 2 MB; upload manually",
+        );
+        continue;
+      }
       if (new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-")
         throw new Error("Resume is not a PDF.");
       const transfer = new DataTransfer();
@@ -521,7 +544,7 @@ function fillApplication(packet, mode = "fill") {
           ? "lastName"
           : /^(e ?mail|email address|your email)$/.test(name)
             ? "email"
-            : /^(phone|phone number|mobile|mobile number|telephone|contact number)$/.test(
+            : /^(phone|phone number|mobile|mobile number|mobile phone number|telephone|contact number)$/.test(
                   name,
                 )
               ? "phone"

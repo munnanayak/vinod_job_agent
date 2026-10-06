@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Job Agent \u2014 Form Assistant",
-  "version": "0.19.0",
+  "version": "0.20.0",
   "description": "Fills approved job applications opened from your Job Agent dashboard. You review and submit.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [
@@ -40,7 +40,7 @@
         "https://www.linkedin.com/jobs/*",
         "https://linkedin.com/jobs/*"
       ],
-      "js": ["linkedin-content.js"],
+      "js": ["fill.js", "linkedin-flow.js", "linkedin-content.js"],
       "run_at": "document_idle"
     }
   ],

@@ -448,15 +448,30 @@ export class FormAssistant {
     if (!report || report.expires <= Date.now())
       throw new BadRequestException("This form session expired.");
     const data = await this.workflow.reviewedFormJob(report.jobId);
-    return {
-      answers: await draftAnswers(
-        data.profile,
-        { ...data.job, appliedBefore: await this.appliedTo(data.job.company) },
-        questions,
-        await this.bank(),
-      ),
-    };
+    const remembered: string[] = [];
+    const answers = await draftAnswers(
+      data.profile,
+      { ...data.job, appliedBefore: await this.appliedTo(data.job.company) },
+      questions,
+      await this.bank(),
+      remembered,
+    );
+    const keys = new Map(
+      questions.map((q) => [answerKey(q, data.job.company), q]),
+    );
+    keys.delete("");
+    const saved = await this.db.client.savedAnswer.findMany({
+      where: { key: { in: [...keys.keys()] } },
+    });
+    for (const item of saved) {
+      const question = keys.get(item.key)!;
+      if (COUNTRY_DEPENDENT.test(question)) continue;
+      answers[question] = item.answer;
+      if (!remembered.includes(question)) remembered.push(question);
+    }
+    return { answers, remembered };
   }
+
   async plan(reportToken: string, observation: NavigationObservation) {
     const report = this.reports.get(reportToken);
     if (!report || report.expires <= Date.now())

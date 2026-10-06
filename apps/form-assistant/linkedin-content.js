@@ -1,5 +1,5 @@
 // Existing LinkedIn login stays in the user's browser. Only the dashboard's
-// one-use code can arm an external Apply handoff; Easy Apply stays manual.
+// one-use code arms only the approved listing and its application flow.
 (async () => {
   const code = /(?:^#|&)job-agent=([a-f0-9]{64})/.exec(location.hash)?.[1];
   if (!code) return;
@@ -60,10 +60,7 @@
           ""
         ).trim();
       if (/easy apply/i.test(label)) {
-        show(
-          "LinkedIn Easy Apply is not supported yet. Apply manually or skip this job.",
-        );
-        skip();
+        await linkedinEasyApply({ code, auto, button, ask, show, panel });
         return;
       }
       if (!/^apply\b/i.test(label)) {
