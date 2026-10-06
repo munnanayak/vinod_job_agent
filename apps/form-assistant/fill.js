@@ -10,6 +10,13 @@ function fillApplication(packet, mode = "fill") {
         return null;
       const p = u.pathname.split("/").filter(Boolean);
       if (
+        u.hostname === "app.whitecarrot.io" &&
+        /^\/profile-builder\/role\/[a-f0-9-]{36}\/user\/(guest|[a-f0-9-]{36})\/?$/i.test(
+          u.pathname,
+        )
+      )
+        return `whitecarrot:role:${p[2].toLowerCase()}`;
+      if (
         ["linkedin.com", "www.linkedin.com"].includes(u.hostname) &&
         /^\/jobs\/view\/\d+\/?$/.test(u.pathname)
       )
@@ -139,7 +146,7 @@ function fillApplication(packet, mode = "fill") {
       el.placeholder ||
       ""
     )
-      .replace(/[*✱]+/g, "")
+      .replace(/[*✱]+|\((?:required|optional)\)/gi, "")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 300);
@@ -217,7 +224,7 @@ function fillApplication(packet, mode = "fill") {
       .map((buttons) => ({
         buttons,
         raw: question(buttons[0])
-          .replace(/[*✱]+/g, "")
+          .replace(/[*✱]+|\((?:required|optional)\)/gi, "")
           .replace(/\s+/g, " ")
           .trim()
           .slice(0, 300),
@@ -542,7 +549,7 @@ function fillApplication(packet, mode = "fill") {
         ? "firstName"
         : /^(last name|family name|surname)$/.test(name)
           ? "lastName"
-          : /^(e ?mail|email address|your email)$/.test(name)
+          : /^(e ?mail|email address|your email|enter your email)$/.test(name)
             ? "email"
             : /^(phone|phone number|mobile|mobile number|mobile phone number|telephone|contact number)$/.test(
                   name,
@@ -563,7 +570,11 @@ function fillApplication(packet, mode = "fill") {
                     : /^(country|country code|country of residence)$/.test(name)
                       ? "country"
                       : null;
-    const value = key ? fields[key] : answers[raw];
+    const value = key
+      ? fields[key]
+      : el.type === "email"
+        ? fields.email
+        : answers[raw];
     if (!value || (!key && guarded(el, raw))) continue;
     // Searchable dropdowns need an option picked, which takes time:
     // content.js does that for the fields marked here.

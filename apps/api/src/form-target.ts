@@ -8,6 +8,18 @@ export function formTarget(
       return null;
     const parts = u.pathname.split("/").filter(Boolean);
     if (
+      u.hostname === "app.whitecarrot.io" &&
+      /^\/profile-builder\/role\/[a-f0-9-]{36}\/user\/(guest|[a-f0-9-]{36})\/?$/i.test(
+        u.pathname,
+      )
+    ) {
+      return {
+        provider: "Whitecarrot",
+        identity: `whitecarrot:role:${parts[2].toLowerCase()}`,
+        url: u.href.split("#")[0],
+      };
+    }
+    if (
       ["linkedin.com", "www.linkedin.com"].includes(u.hostname) &&
       parts.length === 3 &&
       parts[0] === "jobs" &&

@@ -264,3 +264,31 @@ test("automatic submission waits ten seconds, rechecks approval, and records onl
   await tick();
   assert.equal(requests.filter((x) => x.type === "submitted").length, 1);
 });
+
+test("Apply detection handles new top card and identical sticky duplicates but rejects conflicting actions", () => {
+  const ctx = { URL };
+  runInNewContext(flow, ctx);
+  const node = (text, href = "") => ({
+    innerText: text,
+    disabled: false,
+    getClientRects: () => [1],
+    contains: () => false,
+    getAttribute: (name) => (name === "href" ? href : null),
+  });
+  const a = node("Apply"),
+    b = node("Apply");
+  assert.equal(
+    ctx.linkedinApplyButtons({ querySelectorAll: () => [a, b] }).length,
+    1,
+  );
+  assert.equal(
+    ctx.linkedinApplyButtons({
+      querySelectorAll: () => [a, node("Easy Apply")],
+    }).length,
+    2,
+  );
+  assert.equal(
+    ctx.linkedinApplyButtons({ querySelectorAll: () => [node("Saved"), a] })[0],
+    a,
+  );
+});

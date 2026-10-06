@@ -26,7 +26,7 @@ export async function formJobOpen(
   const [provider, board, id] = identity.split(":");
   // LinkedIn availability and external Apply links are inspected in the user's
   // authenticated browser. Server-side scraping cannot validate that session.
-  if (provider === "linkedin") return true;
+  if (provider === "linkedin" || provider === "whitecarrot") return true;
   if (provider === "join") {
     const response = await request(
       `https://join.com/companies/${encodeURIComponent(board)}/${encodeURIComponent(id)}`,
@@ -148,7 +148,7 @@ export class FormSessions {
     const u = new URL(pageUrl);
     const [provider, board, id] = entry.identity.split(":");
     if (
-      ["join", "linkedin"].includes(provider) &&
+      ["join", "linkedin", "whitecarrot"].includes(provider) &&
       formTarget(pageUrl)?.identity === entry.identity
     )
       return this.consume(code, pageUrl, now);
@@ -232,7 +232,7 @@ export class FormAssistant {
     const target = this.target(data);
     if (!target)
       throw new PreconditionFailedException(
-        `${data.job.company} · ${data.job.title}: This job links to a site the Form Assistant cannot fill. It supports Greenhouse, Lever, Ashby and JOIN application URLs. Use Email your CV if a confirmed hiring email is available, or open the job link and apply manually.`,
+        `${data.job.company} · ${data.job.title}: This job links to a site the Form Assistant cannot fill. It supports Greenhouse, Lever, Ashby, JOIN and Whitecarrot application URLs. Use Email your CV if a confirmed hiring email is available, or open the job link and apply manually.`,
       );
     const session = this.sessions.issue(
       jobId,
@@ -266,7 +266,7 @@ export class FormAssistant {
     const target = formTarget(applicationUrl);
     if (!target || target.provider === "LinkedIn external apply")
       throw new PreconditionFailedException(
-        "This Apply link is not a supported Greenhouse, Lever, Ashby or JOIN form. Continue manually or skip this job.",
+        "This Apply link is not a supported Greenhouse, Lever, Ashby, JOIN or Whitecarrot form. Continue manually or skip this job.",
       );
     const session = this.sessions.peek(code, pageUrl);
     const data = await this.workflow.reviewedFormJob(session.jobId);

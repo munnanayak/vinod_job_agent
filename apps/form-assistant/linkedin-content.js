@@ -47,11 +47,7 @@
       }
       return;
     }
-    const buttons = [
-      ...document.querySelectorAll(
-        '.jobs-apply-button,[data-control-name="jobdetails_topcard_inapply"]',
-      ),
-    ].filter((el) => !el.disabled && el.getClientRects().length);
+    const buttons = linkedinApplyButtons(document);
     if (buttons.length === 1) {
       const button = buttons[0],
         label = (

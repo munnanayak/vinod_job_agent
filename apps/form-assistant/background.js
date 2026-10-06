@@ -28,7 +28,9 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       if (
         !sender.tab?.id ||
         !pageUrl ||
-        new URL(pageUrl).origin !== "https://join.com"
+        !["https://join.com", "https://app.whitecarrot.io"].includes(
+          new URL(pageUrl).origin,
+        )
       )
         throw new Error("Invalid JOIN tab.");
       const key = `join-session-${sender.tab.id}`;
@@ -151,6 +153,7 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
         "jobs.eu.lever.co",
         "jobs.ashbyhq.com",
         "join.com",
+        "app.whitecarrot.io",
       ].includes(target.hostname) ||
       target.protocol !== "https:"
     )

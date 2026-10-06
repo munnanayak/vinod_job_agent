@@ -5,6 +5,17 @@ function joinPageMatches(identity, value) {
     const [provider, company, job] = identity.split(":");
     const u = new URL(value),
       p = u.pathname.split("/").filter(Boolean);
+    if (provider === "whitecarrot")
+      return (
+        u.origin === "https://app.whitecarrot.io" &&
+        !u.username &&
+        !u.password &&
+        !u.port &&
+        /^\/profile-builder\/role\/[a-f0-9-]{36}\/user\/(guest|[a-f0-9-]{36})\/?$/i.test(
+          u.pathname,
+        ) &&
+        p[2].toLowerCase() === job
+      );
     if (
       provider !== "join" ||
       u.origin !== "https://join.com" ||
@@ -28,7 +39,12 @@ function joinPageMatches(identity, value) {
 function joinButtonKind(label) {
   const text = label.trim().toLowerCase();
   if (/^(apply now|apply for this (job|position))$/.test(text)) return "apply";
-  if (/^(next|next step|continue|save and continue)$/.test(text)) return "next";
+  if (
+    /^(next|next step|continue|save and continue|get started|review)$/.test(
+      text,
+    )
+  )
+    return "next";
   if (/^(submit( application)?|send application)$/.test(text)) return "submit";
   return null;
 }

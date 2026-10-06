@@ -1,4 +1,4 @@
-// JOIN navigation is scoped to one approved application in this tab.
+// Application navigation is scoped to one approved application in this tab.
 (async () => {
   const ask = (message) =>
     new Promise((resolve) => chrome.runtime.sendMessage(message, resolve));
@@ -24,7 +24,7 @@
     stopped = false;
   if (packet?.blocked) {
     show(
-      "JOIN did not retain the approved job identity in this route. Continue manually or return to the exact approved listing; Job Agent will not select another vacancy.",
+      "Application did not retain the approved job identity in this route. Continue manually or return to the exact approved listing; Job Agent will not select another vacancy.",
     );
     return;
   }
@@ -65,7 +65,9 @@
       } catch {}
       const response = await ask({ type: "claim", token: code, questions });
       if (!response?.ok)
-        throw Error(response?.error || "Could not prepare JOIN application.");
+        throw Error(
+          response?.error || "Could not prepare Application application.",
+        );
       packet = response.data;
       packet.expires = Date.now() + 3 * 3_600_000;
       packet.auto = /(?:^#|&)auto=1(?:&|$)/.test(location.hash);
@@ -118,7 +120,7 @@
           fillApplication({ ...packet, resume: undefined }, "fill");
         } catch {}
         show(
-          "Complete JOIN sign-in, OTP or CAPTCHA yourself. Job Agent will resume filling this approved application after login.",
+          "Complete Application sign-in, OTP or CAPTCHA yourself. Job Agent will resume filling this approved application after login.",
         );
         button("Skip this job", () => finish("skip", packet.reportToken));
         return;
@@ -150,16 +152,26 @@
         inspected = false;
       try {
         missing = fillApplication(packet, "unanswered");
+        const invalid = [
+          ...document.querySelectorAll("input,textarea,select"),
+        ].some(
+          (el) =>
+            el.getClientRects().length &&
+            (el.getAttribute("aria-invalid") === "true" ||
+              (el.validity && !el.validity.valid)),
+        );
+        if (invalid) missing.push("Check invalid form fields");
         inspected = true;
       } catch {}
       const buttons = [
         ...document.querySelectorAll('button,a,input[type="submit"]'),
       ].filter((el) => !el.disabled && el.getClientRects().length);
-      let next = buttons.find((el) =>
+      const forward = buttons.filter((el) =>
         ["apply", "next"].includes(
           joinButtonKind(el.textContent || el.value || ""),
         ),
       );
+      let next = forward.length === 1 ? forward[0] : null;
       const submit = buttons.find(
         (el) => joinButtonKind(el.textContent || el.value || "") === "submit",
       );
@@ -173,16 +185,14 @@
         buttons.map((el) => el.textContent || el.value || "").join("|");
       if (!next && !missing.length && !captcha && step !== plannedStep) {
         plannedStep = step;
-        const candidates = buttons
-          .slice(0, 40)
-          .map((el, id) => ({
-            id,
-            label: (el.textContent || el.value || "").trim().slice(0, 200),
-            href: el.getAttribute("href")
-              ? new URL(el.getAttribute("href"), location.href).href
-              : "",
-            withinForm: Boolean(el.closest('form,[role="dialog"]')),
-          }));
+        const candidates = buttons.slice(0, 40).map((el, id) => ({
+          id,
+          label: (el.textContent || el.value || "").trim().slice(0, 200),
+          href: el.getAttribute("href")
+            ? new URL(el.getAttribute("href"), location.href).href
+            : "",
+          withinForm: Boolean(el.closest('form,[role="dialog"]')),
+        }));
         busy = true;
         try {
           const response = await ask({
@@ -274,6 +284,23 @@
           cancelled = true;
         });
         if (Date.now() >= autoSubmitAt) {
+          const approval = await ask({
+            type: "draft",
+            token: packet.reportToken,
+            questions: [],
+          });
+          if (!approval?.ok) {
+            show(approval?.error || "Approval check failed.");
+            cancelled = true;
+            return;
+          }
+          if (
+            !joinPageMatches(packet.identity, location.href) ||
+            !submit.isConnected ||
+            submit.disabled ||
+            fillApplication(packet, "unanswered").length
+          )
+            return;
           packet.submitAt = Date.now();
           await ask({ type: "join-save", packet, auto: packet.auto });
           submit.click();
@@ -304,6 +331,6 @@
       else void inspect();
     }, 1500);
   } catch (error) {
-    show(error.message || "Could not fill this JOIN form.");
+    show(error.message || "Could not fill this Application form.");
   }
 })();

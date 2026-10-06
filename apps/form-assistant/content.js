@@ -52,7 +52,7 @@
   banner.style.cssText =
     "all:initial;display:block;position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:380px;max-height:60vh;overflow:auto;background:#fff;color:#1d3b2f;border:2px solid #265942;border-radius:10px;padding:14px 16px;font:14px/1.5 system-ui,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.2)";
   const show = (html) => {
-    panel.innerHTML = `<strong>Job Agent · 0.19.0</strong><br>${html}`;
+    panel.innerHTML = `<strong>Job Agent · 0.21.0</strong><br>${html}`;
     if (!banner.isConnected) document.body.append(banner);
   };
   const escape = (t) =>

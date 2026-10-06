@@ -1,3 +1,34 @@
+// Find the job's action, including newer LinkedIn top-card markup.
+function linkedinApplyButtons(root) {
+  const candidates = [
+    ...root.querySelectorAll(
+      '.jobs-apply-button,[data-control-name="jobdetails_topcard_inapply"],.job-details-jobs-unified-top-card button,.job-details-jobs-unified-top-card a,button[aria-label*="Apply"],a[aria-label*="Apply"]',
+    ),
+  ].filter(
+    (el) =>
+      !el.disabled &&
+      el.getAttribute("aria-disabled") !== "true" &&
+      el.getClientRects().length &&
+      /^(easy apply|apply)(?:\s|$)/i.test(
+        (el.innerText || el.getAttribute("aria-label") || "").trim(),
+      ),
+  );
+  // Nested wrappers and duplicate sticky top cards may represent the same action.
+  const nodes = candidates.filter(
+    (el) => !candidates.some((other) => other !== el && el.contains(other)),
+  );
+  if (nodes.length > 1) {
+    const keys = new Set(
+      nodes.map(
+        (el) =>
+          `${/easy apply/i.test(el.innerText || el.getAttribute("aria-label") || "")}:${el.getAttribute("href") || ""}`,
+      ),
+    );
+    if (keys.size === 1) return [nodes[0]];
+  }
+  return nodes;
+}
+
 // The approved LinkedIn job URL must remain unchanged throughout Easy Apply.
 function linkedinJobIdentity(value) {
   try {
