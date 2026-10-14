@@ -697,6 +697,23 @@ test("standalone form submissions do not start an application queue", async () =
   assert.deepEqual(await service.submitted("token"), { ok: true, next: null });
 });
 
+test("a closed job explains why the queue cannot continue", async () => {
+  const service = new FormAssistant({
+    approvedFormJobIds: async () => {
+      throw new Error("Google token request failed: invalid_grant");
+    },
+  });
+  service.applying = true;
+  service.sessions.consumeClosed = () => ({ jobId: "job" });
+  assert.deepEqual(await service.closed("code", "https://x"), {
+    ok: true,
+    next: null,
+    reason:
+      "Could not load the next approved job: Google token request failed: invalid_grant",
+  });
+  assert.ok(service.passed.has("job"));
+});
+
 test("email previews cap each manually published batch at ten jobs", async () => {
   const f = fakeWorkflow(12);
   assert.equal((await f.workflow.preview()).items.length, 10);

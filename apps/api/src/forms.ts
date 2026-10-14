@@ -433,7 +433,7 @@ export class FormAssistant {
       this.applying = false;
       return { ok: true, next: null, paused: this.appliedThisSession };
     }
-    return { ok: true, next: await this.next() };
+    return { ok: true, ...(await this.continuation()) };
   }
   /** Chooses among a dropdown's options when your profile determines the answer. */
   async options(
@@ -622,21 +622,42 @@ export class FormAssistant {
       throw new BadRequestException("This form session expired.");
     this.reports.delete(reportToken);
     this.passed.add(report.jobId);
-    return { ok: true, next: await this.next() };
+    return { ok: true, ...(await this.continuation()) };
   }
   async closed(code: string, pageUrl: string) {
     const session = this.sessions.consumeClosed(code, pageUrl);
     this.passed.add(session.jobId);
-    return { ok: true, next: await this.next() };
+    return { ok: true, ...(await this.continuation()) };
   }
   // The next approved job's one-use link, so the same tab can continue the queue.
   private async next() {
-    if (!this.applying || this.appliedThisSession >= this.sessionLimit())
-      return null;
+    return (await this.continuation()).next;
+  }
+  // The next link, or why the tab cannot continue on its own.
+  private async continuation(): Promise<{
+    next: string | null;
+    reason?: string;
+  }> {
+    // A job opened on its own is not part of a queue run.
+    if (!this.applying) return { next: null };
+    if (this.appliedThisSession >= this.sessionLimit())
+      return {
+        next: null,
+        reason: `${this.sessionLimit()} applications completed in this round. Click Apply on the dashboard for the next round.`,
+      };
     try {
-      return (await this.batch(1)).ready[0]?.openUrl ?? null;
-    } catch {
-      return null;
+      const { ready } = await this.batch(1);
+      return ready[0]
+        ? { next: ready[0].openUrl }
+        : {
+            next: null,
+            reason: "No further approved supported jobs are ready.",
+          };
+    } catch (e) {
+      return {
+        next: null,
+        reason: `Could not load the next approved job: ${(e as Error).message}`,
+      };
     }
   }
 }

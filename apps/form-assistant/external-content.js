@@ -25,6 +25,7 @@
   let busy = false,
     previous = "",
     stopped = false,
+    closedSeen = false,
     submitAt = 0;
   const expiry = Date.now() + 10800000,
     attempts = new Map();
@@ -55,7 +56,8 @@
         show(
           response.data?.paused
             ? "10 applications completed."
-            : "No more ready applications in this batch.",
+            : response.data?.reason ||
+                "No more ready applications in this batch.",
         );
     };
     const tick = async () => {
@@ -125,6 +127,20 @@
               (inputs.length === 1 && inputs[0].type === "email"))
           )
             root = document.body;
+        }
+        // A closing notice only counts when no application form is present,
+        // so a job description that mentions it cannot skip a live form.
+        if (
+          !root &&
+          !closedSeen &&
+          /no longer accepting applications|(job|position|posting|vacancy|role) (is |has been )?(no longer available|closed|filled|expired)|job (was )?not found|applications? (are |is )?(now )?closed/i.test(
+            document.body.innerText,
+          )
+        ) {
+          closedSeen = true;
+          show("This job is closed. Moving to the next approved job…");
+          await finish("skip");
+          return;
         }
         if (!root)
           return show(

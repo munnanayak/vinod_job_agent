@@ -25,7 +25,11 @@
       }
       if (response.data?.next)
         location.href = response.data.next + (auto ? "&auto=1" : "");
-      else show("No further approved supported jobs are ready.");
+      else
+        show(
+          response.data?.reason ||
+            "No further approved supported jobs are ready.",
+        );
     });
     panel.append(button);
   };
@@ -34,15 +38,21 @@
   );
   for (let attempt = 0; attempt < 40; attempt++) {
     if (
-      /no longer accepting applications|job is no longer available/i.test(
+      /no longer accepting applications|job is no longer available|this job has expired/i.test(
         document.body.innerText,
       )
     ) {
+      show("This job is closed. Moving to the next approved job…");
       const response = await ask({ type: "closed", token: code });
       if (response?.ok && response.data?.next)
         location.href = response.data.next + (auto ? "&auto=1" : "");
+      else if (response?.ok)
+        // The code is spent, so a retry button could only fail.
+        show(
+          `This job is closed and was skipped. ${response.data?.reason || "No further approved supported jobs are ready."}`,
+        );
       else {
-        show("This job is closed.");
+        show(`This job is closed. ${response?.error || ""}`);
         skip();
       }
       return;

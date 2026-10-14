@@ -86,7 +86,8 @@ async function linkedinEasyApply({ code, auto, button, ask, show, panel }) {
       show(
         result.data?.paused
           ? "10 applications completed. Start another batch from the dashboard."
-          : "This batch has no further ready applications.",
+          : result.data?.reason ||
+              "This batch has no further ready applications.",
       );
   };
   const tick = async () => {

@@ -81,7 +81,7 @@
     const next = done.data?.next;
     if (
       typeof next === "string" &&
-      /^https:\/\/(job-boards\.greenhouse\.io|jobs\.(eu\.)?lever\.co|jobs\.ashbyhq\.com)\//.test(
+      /^https:\/\/(job-boards\.greenhouse\.io|jobs\.(eu\.)?lever\.co|jobs\.ashbyhq\.com|(www\.)?linkedin\.com\/jobs\/view|join\.com|app\.whitecarrot\.io)\//.test(
         next,
       )
     ) {
@@ -93,7 +93,10 @@
       show(
         `${did} That is ${done.data.paused} applications in this round, so the agent has stopped. Click Apply next 10 on the dashboard for the next round.`,
       );
-    else show(`${did} No more approved jobs to open. You can close this tab.`);
+    else
+      show(
+        `${did} ${done.data?.reason || "No more approved jobs to open. You can close this tab."}`,
+      );
   };
 
   const submitButton = () =>

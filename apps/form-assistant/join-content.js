@@ -45,7 +45,8 @@
       show(
         response.data?.paused
           ? "10 applications completed. Click Apply next 10 for another batch."
-          : "No further approved supported applications are ready.",
+          : response.data?.reason ||
+              "No further approved supported applications are ready.",
       );
   };
   const closed = () =>
