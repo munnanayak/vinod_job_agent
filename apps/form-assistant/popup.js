@@ -63,3 +63,36 @@ button.addEventListener("click", async () => {
     button.disabled = false;
   }
 });
+
+let employerTab;
+const enableButton = document.getElementById("enable");
+enableButton.disabled = true;
+chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+  employerTab = tab;
+  enableButton.disabled = false;
+});
+document.getElementById("enable").addEventListener("click", async () => {
+  try {
+    const tab = employerTab;
+    if (!tab?.url) throw Error("Open the employer tab again.");
+    const u = new URL(tab.url);
+    if (u.protocol !== "https:")
+      throw Error("Open the HTTPS employer application first.");
+    const allowed = await chrome.permissions.request({
+      origins: [`${u.origin}/*`],
+    });
+    if (!allowed)
+      throw Error(
+        "Site access is required to inspect and fill this employer's form.",
+      );
+    const response = await chrome.runtime.sendMessage({
+      type: "external-enable",
+      tabId: tab.id,
+    });
+    result.textContent = response?.ok
+      ? "Application flow enabled. Return to the employer tab."
+      : response?.error || "Prepare the Apply link again.";
+  } catch (error) {
+    result.textContent = error.message;
+  }
+});

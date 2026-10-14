@@ -511,7 +511,7 @@ test("LinkedIn external Apply resolves a supported form while preserving origina
       service.resolve(
         prepared.code,
         f.jobs[0].url,
-        "https://evil.test/application",
+        "http://evil.test/application",
       ),
     /not a supported/,
   );
@@ -782,5 +782,78 @@ test("startup recovers interrupted discovery only while owning the shared lock",
   } finally {
     if (old === undefined) delete process.env.SCHEDULER_ENABLED;
     else process.env.SCHEDULER_ENABLED = old;
+  }
+});
+
+test("generic employer handoff claims only its bound page and grants observed same-origin next steps", async () => {
+  const f = fakeWorkflow();
+  f.jobs[0].source = "linkedin";
+  f.jobs[0].url = "https://www.linkedin.com/jobs/view/12345/";
+  f.rows[1][6] = f.jobs[0].url;
+  f.rows[1][19] = "linkedin:acme";
+  const service = new FormAssistant(f.workflow);
+  const prepared = await service.prepare("job0");
+  const destination = "https://careers.example.com/job/123/application";
+  const resolved = await service.resolve(
+    prepared.code,
+    f.jobs[0].url,
+    destination,
+  );
+  const code = resolved.openUrl.split("#job-agent=")[1];
+  await assert.rejects(
+    () =>
+      service.claim(code, "https://careers.example.com/job/456/application"),
+    /Wrong application/,
+  );
+  const packet = await service.claim(code, destination);
+  assert.match(packet.identity, /^external:/);
+  const prior = process.env.FUELIX_API_KEY;
+  delete process.env.FUELIX_API_KEY;
+  try {
+    const observation = {
+      pageUrl: destination,
+      heading: "Application",
+      login: false,
+      captcha: false,
+      missing: [],
+      buttons: [
+        {
+          id: 0,
+          label: "Next step",
+          href: "https://careers.example.com/job/123/questions",
+          withinForm: true,
+        },
+        {
+          id: 1,
+          label: "Next step",
+          href: "https://other.example.com/questions",
+          withinForm: true,
+        },
+        { id: 2, label: "Submit application", href: "", withinForm: true },
+      ],
+    };
+    const decision = await service.plan(packet.reportToken, observation);
+    assert.equal(decision.action, "click");
+    assert.equal(decision.buttonId, 0);
+    assert.deepEqual(decision.pages, [
+      "https://careers.example.com/job/123/questions",
+    ]);
+    await assert.rejects(
+      () =>
+        service.plan(packet.reportToken, {
+          ...observation,
+          pageUrl: "https://careers.example.com/job/456/questions",
+        }),
+      /Wrong application/,
+    );
+    const blocked = await service.plan(packet.reportToken, {
+      ...observation,
+      pageUrl: decision.pages[0],
+      missing: ["Years of experience"],
+    });
+    assert.equal(blocked.action, "manual");
+    assert.equal(f.jobs[0].url, "https://www.linkedin.com/jobs/view/12345/");
+  } finally {
+    if (prior !== undefined) process.env.FUELIX_API_KEY = prior;
   }
 });

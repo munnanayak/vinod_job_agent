@@ -133,3 +133,31 @@ export function matchesApplicationPage(identity: string, value: string) {
     return false;
   }
 }
+
+// Generic destinations are admitted only through an approved Apply handoff,
+// not used to treat every discovery/aggregator link as fillable.
+export function externalTarget(value: string) {
+  try {
+    const u = new URL(value);
+    if (
+      u.protocol !== "https:" ||
+      u.username ||
+      u.password ||
+      u.port ||
+      !/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(u.hostname) ||
+      /(?:\.local|\.localhost)$|^(?:localhost|127\.|10\.|192\.168\.|169\.254\.)|^[0-9.]+$/.test(
+        u.hostname,
+      ) ||
+      /(?:^|\.)(?:linkedin\.com|accounts\.google\.com)$/.test(u.hostname)
+    )
+      return null;
+    u.hash = "";
+    return {
+      identity: `external:${encodeURIComponent(u.href)}`,
+      url: u.href,
+      provider: "External application",
+    };
+  } catch {
+    return null;
+  }
+}

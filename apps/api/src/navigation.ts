@@ -30,7 +30,9 @@ export async function planNavigation(
       ) &&
       (/^apply\b/i.test(b.label) ||
         (b.withinForm &&
-          /next|continue|proceed|review|save and/i.test(b.label))),
+          /next|continue|proceed|review|get started|start application|save and/i.test(
+            b.label,
+          ))),
   );
   if (!eligible.length)
     return {

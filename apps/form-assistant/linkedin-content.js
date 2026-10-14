@@ -73,6 +73,25 @@
           new URL(href, location.href).hostname,
         )
       ) {
+        const known = [
+          "jobs.lever.co",
+          "jobs.eu.lever.co",
+          "jobs.ashbyhq.com",
+          "boards.greenhouse.io",
+          "job-boards.greenhouse.io",
+          "join.com",
+          "app.whitecarrot.io",
+        ].includes(new URL(href, location.href).hostname);
+        if (!known) {
+          const armed = await ask({ type: "linkedin-arm", token: code, auto });
+          if (armed?.ok) {
+            button.click();
+            show(
+              "Open the Form Assistant extension on the employer site and enable its application flow.",
+            );
+          }
+          return;
+        }
         const response = await ask({
           type: "resolve",
           token: code,

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Job Agent \u2014 Form Assistant",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "description": "Fills approved job applications opened from your Job Agent dashboard. You review and submit.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [
@@ -51,5 +51,6 @@
   "action": {
     "default_popup": "popup.html",
     "default_title": "Fill an approved application"
-  }
+  },
+  "optional_host_permissions": ["https://*/*"]
 }

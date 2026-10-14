@@ -1,5 +1,6 @@
 import {
   autofillTarget,
+  externalTarget,
   formTarget,
   matchesApplicationPage,
 } from "./form-target.js";
@@ -26,7 +27,12 @@ export async function formJobOpen(
   const [provider, board, id] = identity.split(":");
   // LinkedIn availability and external Apply links are inspected in the user's
   // authenticated browser. Server-side scraping cannot validate that session.
-  if (provider === "linkedin" || provider === "whitecarrot") return true;
+  if (
+    provider === "linkedin" ||
+    provider === "whitecarrot" ||
+    provider === "external"
+  )
+    return true;
   if (provider === "join") {
     const response = await request(
       `https://join.com/companies/${encodeURIComponent(board)}/${encodeURIComponent(id)}`,
@@ -135,7 +141,10 @@ export class FormSessions {
         "Preparation expired or was already used. Prepare the form again.",
       );
     }
-    if (formTarget(pageUrl)?.identity !== entry.identity)
+    if (
+      (formTarget(pageUrl) || externalTarget(pageUrl))?.identity !==
+      entry.identity
+    )
       throw new BadRequestException(
         "Wrong application page. Open the exact job linked from the dashboard.",
       );
@@ -210,6 +219,7 @@ export class FormAssistant {
       identity: string;
       expires: number;
       planRequests?: number;
+      pages?: string[];
     }
   >();
   constructor(
@@ -263,7 +273,7 @@ export class FormAssistant {
       throw new BadRequestException(
         "Only the approved LinkedIn job can resolve an external Apply link.",
       );
-    const target = formTarget(applicationUrl);
+    const target = formTarget(applicationUrl) || externalTarget(applicationUrl);
     if (!target || target.provider === "LinkedIn external apply")
       throw new PreconditionFailedException(
         "This Apply link is not a supported Greenhouse, Lever, Ashby, JOIN or Whitecarrot form. Continue manually or skip this job.",
@@ -392,6 +402,7 @@ export class FormAssistant {
     }
     return {
       identity: session.identity,
+      jobTitle: data.job.title,
       reportToken,
       fields: fieldsFor(data.profile),
       answers,
@@ -476,7 +487,16 @@ export class FormAssistant {
     const report = this.reports.get(reportToken);
     if (!report || report.expires <= Date.now())
       throw new BadRequestException("This form session expired.");
-    if (!matchesApplicationPage(report.identity, observation.pageUrl))
+    if (
+      !matchesApplicationPage(report.identity, observation.pageUrl) &&
+      !(
+        report.identity.startsWith("external:") &&
+        (externalTarget(observation.pageUrl)?.identity === report.identity ||
+          report.pages?.includes(
+            externalTarget(observation.pageUrl)?.url || "",
+          ))
+      )
+    )
       throw new BadRequestException("Wrong application page.");
     if ((report.planRequests ?? 0) >= 30)
       return {
@@ -488,15 +508,30 @@ export class FormAssistant {
     await this.workflow.reviewedFormJob(report.jobId);
     const buttons = observation.buttons.filter(
       (button) =>
-        !button.href || matchesApplicationPage(report.identity, button.href),
+        !button.href ||
+        matchesApplicationPage(report.identity, button.href) ||
+        (report.identity.startsWith("external:") &&
+          externalTarget(button.href) &&
+          new URL(button.href).origin === new URL(observation.pageUrl).origin),
     );
-    return planNavigation({
+    const decision = await planNavigation({
       ...observation,
       buttons,
       login:
         observation.login ||
         /\/authentication\b/.test(new URL(observation.pageUrl).pathname),
     });
+    if (
+      report.identity.startsWith("external:") &&
+      decision.action === "click"
+    ) {
+      const href = buttons.find((b) => b.id === decision.buttonId)?.href;
+      if (href)
+        report.pages = [
+          ...new Set([...(report.pages || []), externalTarget(href)!.url]),
+        ].slice(0, 30);
+    }
+    return { ...decision, pages: report.pages || [] };
   }
   // Whether an application to this company is already recorded here.
   private async appliedTo(company: string) {

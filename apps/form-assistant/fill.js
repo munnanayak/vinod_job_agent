@@ -9,6 +9,14 @@ function fillApplication(packet, mode = "fill") {
       if (u.protocol !== "https:" || u.username || u.password || u.port)
         return null;
       const p = u.pathname.split("/").filter(Boolean);
+      if (packet.identity?.startsWith("external:")) {
+        u.hash = "";
+        if (
+          `external:${encodeURIComponent(u.href)}` === packet.identity ||
+          packet.pages?.includes(u.href)
+        )
+          return packet.identity;
+      }
       if (
         u.hostname === "app.whitecarrot.io" &&
         /^\/profile-builder\/role\/[a-f0-9-]{36}\/user\/(guest|[a-f0-9-]{36})\/?$/i.test(
@@ -96,7 +104,9 @@ function fillApplication(packet, mode = "fill") {
     ? document.querySelector(
         '.jobs-easy-apply-modal[role="dialog"], [role="dialog"] .jobs-easy-apply-content',
       )
-    : document;
+    : packet.identity?.startsWith("external:")
+      ? document.querySelector("[data-job-agent-form]")
+      : document;
   if (!root) throw new Error("Open this job's Easy Apply modal first.");
 
   // The question text for a field: its own label, else the nearest label-like
