@@ -4,6 +4,8 @@ type Profile = {
   currentCity: string;
   country?: string;
   linkedinUrl: string;
+  githubUrl?: string;
+  portfolioUrl?: string;
   yearsOfExperience: number;
   noticePeriodDays: number | null;
   locations: string[];
@@ -75,6 +77,20 @@ export function knownAnswer(label: string, p: Profile): string | null {
   if (/current (job )?(title|role|designation|position)/.test(q))
     return p.currentTitle;
   if (/linkedin/.test(q)) return p.linkedinUrl || null;
+  // "GitHub / Behance / any other links to your work", portfolio or website.
+  if (
+    /github|portfolio|personal (website|site)|links? to (your )?(work|projects)/.test(
+      q,
+    )
+  ) {
+    const links =
+      /github/.test(q) && !/portfolio|other|work|behance/.test(q)
+        ? [p.githubUrl]
+        : /github/.test(q)
+          ? [p.githubUrl, p.portfolioUrl]
+          : [p.portfolioUrl || p.githubUrl];
+    return links.filter(Boolean).join(", ") || null;
+  }
   // "In what countries do you have the right to work?" wants the country name.
   if (
     /(what|which) countr(y|ies)/.test(q) &&

@@ -337,7 +337,9 @@
 
   try {
     // Lever and Ashby render the form after load; wait up to 20 seconds for fields.
-    let questions = null;
+    let questions = null,
+      seenQuestions = -1,
+      steady = 0;
     for (let i = 0; i < 40 && !questions; i++) {
       if (closedRedirect()) {
         show("This job is no longer open. Skipping…");
@@ -345,10 +347,22 @@
         return;
       }
       try {
-        questions = fillApplication({}, "questions");
+        // Ashby and Lever add their questions after the name and email
+        // fields: wait until the list is non-empty and has stopped growing.
+        const found = fillApplication({}, "questions");
+        steady = found.length === seenQuestions ? steady + 1 : 0;
+        seenQuestions = found.length;
+        if (found.length && steady >= 3) questions = found;
+        else await sleep(500);
       } catch {
         await sleep(500);
       }
+    }
+    // A form with only fixed fields still continues after the wait.
+    if (!questions && seenQuestions === 0) {
+      try {
+        questions = fillApplication({}, "questions");
+      } catch {}
     }
     if (!questions)
       throw new Error(
@@ -374,6 +388,34 @@
       }
     };
     await pickMarked();
+    // Questions that appeared after the first read get drafted too.
+    try {
+      const later = fillApplication({}, "questions").filter(
+        (q) => !questions.includes(q),
+      );
+      if (later.length) {
+        const drafted = await ask({
+          type: "draft",
+          token: claim.data.reportToken,
+          questions: later,
+        });
+        if (Object.keys(drafted?.data?.answers ?? {}).length) {
+          const more = fillApplication(
+            {
+              identity: claim.data.identity,
+              answers: drafted.data.answers,
+              remembered: drafted.data.remembered ?? [],
+              noResume: true,
+            },
+            "fill",
+          );
+          result.filled.push(...more.filled);
+          await pickMarked();
+        }
+      }
+    } catch {
+      // Optional step: what could not be drafted stays for you.
+    }
     // Dropdowns that are still empty: read their options and let Job Agent
     // choose the one your profile supports, if any.
     try {

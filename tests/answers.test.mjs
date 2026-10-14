@@ -52,3 +52,22 @@ test("salary, visa, demographic and consent questions are never answered", async
   );
   assert.deepEqual(answers, { "Notice period": "30 days" });
 });
+
+test("Ashby link and location questions come from the profile", () => {
+  const p = {
+    ...profile,
+    githubUrl: "https://github.com/test",
+    portfolioUrl: "https://test.dev",
+  };
+  assert.equal(
+    knownAnswer("Your Linkedin profile link.", p),
+    "https://www.linkedin.com/in/test",
+  );
+  assert.equal(
+    knownAnswer("GitHub/ Behance/ any other links to your work.", p),
+    "https://github.com/test, https://test.dev",
+  );
+  assert.equal(knownAnswer("GitHub profile", p), "https://github.com/test");
+  assert.equal(knownAnswer("Portfolio", p), "https://test.dev");
+  assert.equal(knownAnswer("What is your current location?", p), "Bengaluru");
+});
