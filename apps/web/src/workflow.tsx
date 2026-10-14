@@ -475,17 +475,25 @@ export function Workflow() {
             <p>
               {overview?.queued ?? 0} supported jobs waiting for processing.
             </p>
-            {overview?.sourceHealth?.map((source) => (
-              <small className="run" key={source.board}>
-                {source.board}:{" "}
-                {source.enabled
-                  ? source.lastScannedAt
-                    ? `last checked ${new Date(source.lastScannedAt).toLocaleString()}`
-                    : "not checked yet"
-                  : "disabled"}
-                {source.lastError ? ` — ${source.lastError}` : ""}
-              </small>
-            ))}
+            {/* Only the three most recently checked boards. */}
+            {[...(overview?.sourceHealth ?? [])]
+              .sort(
+                (a, b) =>
+                  (b.lastScannedAt ? Date.parse(b.lastScannedAt) : 0) -
+                  (a.lastScannedAt ? Date.parse(a.lastScannedAt) : 0),
+              )
+              .slice(0, 3)
+              .map((source) => (
+                <small className="run" key={source.board}>
+                  {source.board}:{" "}
+                  {source.enabled
+                    ? source.lastScannedAt
+                      ? `last checked ${new Date(source.lastScannedAt).toLocaleString()}`
+                      : "not checked yet"
+                    : "disabled"}
+                  {source.lastError ? ` — ${source.lastError}` : ""}
+                </small>
+              ))}
             {connected && Boolean(overview?.pendingExport) && (
               <button disabled={Boolean(busy)} onClick={exportSheet}>
                 {busy === "export"
